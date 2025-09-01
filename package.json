@@ -12,7 +12,12 @@
     "type": "git",
     "url": "git+https://github.com/gibbs-codes/travlrApi.git"
   },
-  "keywords": ["travel", "api", "express", "ai-agents"],
+  "keywords": [
+    "travel",
+    "api",
+    "express",
+    "ai-agents"
+  ],
   "author": "",
   "license": "ISC",
   "bugs": {
@@ -21,14 +26,15 @@
   "homepage": "https://github.com/gibbs-codes/travlrApi#readme",
   "description": "Travel API with AI agent flow support",
   "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "helmet": "^7.0.0",
-    "dotenv": "^16.3.1",
-    "openai": "^4.20.1",
-    "ollama": "^0.5.0",
     "axios": "^1.6.0",
-    "mongoose": "^8.0.3"
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "helmet": "^7.0.0",
+    "mongoose": "^8.0.3",
+    "node-fetch": "^3.3.2",
+    "ollama": "^0.5.0",
+    "openai": "^4.20.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

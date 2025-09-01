@@ -59,6 +59,8 @@ export class TripOrchestrator extends BaseAgent {
       // Execute all agents in parallel
       const agentTasks = await this.executeAgentsInParallel(criteria);
       
+      console.log('Agent task results:', JSON.stringify(agentTasks, null, 2));
+      
       // Synthesize results into comprehensive trip plan
       const tripPlan = await this.synthesizeTripPlan(agentTasks, criteria);
       

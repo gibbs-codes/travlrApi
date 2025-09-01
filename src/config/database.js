@@ -1,6 +1,6 @@
 export const mongoConfig = {
   development: {
-    uri: process.env.MONGO_URI || 'mongodb://localhost:27017/travlr_dev',
+    uri: process.env.MONGODB_URI || 'mongodb://localhost:27017/travlrapi',
     options: {
       maxPoolSize: 10,
       serverSelectionTimeoutMS: 5000,
@@ -8,7 +8,7 @@ export const mongoConfig = {
     }
   },
   production: {
-    uri: process.env.MONGO_URI,
+    uri: process.env.MONGODB_URI,
     options: {
       maxPoolSize: 20,
       serverSelectionTimeoutMS: 10000,

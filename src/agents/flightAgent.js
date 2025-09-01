@@ -1,4 +1,6 @@
+// src/agents/flightAgent.js (updated)
 import { TripPlanningAgent } from './baseAgent.js';
+import amadeusService from '../services/amadeusService.js';
 
 export class FlightAgent extends TripPlanningAgent {
   constructor(aiConfig = {}) {
@@ -8,117 +10,72 @@ export class FlightAgent extends TripPlanningAgent {
       aiConfig,
       {
         maxResults: 10,
-        providers: ['amadeus', 'skyscanner', 'google_flights']
+        providers: ['amadeus']
       }
     );
   }
 
   async search(criteria) {
-    // Enhanced mock flight search with dynamic data based on destination
-    const destinations = this.getDestinationData(criteria.destination);
-    const basePrice = destinations.basePrice || 400;
-    const flightTime = destinations.flightTime || '6h 30m';
-    
-    const mockFlights = [
-      {
-        id: 'FL001',
-        airline: 'United Airlines',
-        departure: { airport: criteria.origin, time: '08:00', date: criteria.departureDate },
-        arrival: { airport: criteria.destination, time: this.calculateArrivalTime('08:00', flightTime), date: criteria.departureDate },
-        price: basePrice + 50,
-        duration: flightTime,
-        stops: 0,
-        class: 'Economy',
-        aircraft: 'Boeing 737-900',
-        baggage: { carry: 1, checked: 1 },
-        wifi: true,
-        meals: true
-      },
-      {
-        id: 'FL002',
-        airline: 'Delta Airlines',
-        departure: { airport: criteria.origin, time: '10:15', date: criteria.departureDate },
-        arrival: { airport: criteria.destination, time: this.calculateArrivalTime('10:15', this.addLayoverTime(flightTime)), date: criteria.departureDate },
-        price: basePrice + 120,
-        duration: this.addLayoverTime(flightTime),
-        stops: 1,
-        stopover: 'Atlanta (ATL)',
-        class: 'Economy',
-        aircraft: 'Airbus A320',
-        baggage: { carry: 1, checked: 1 },
-        wifi: true,
-        meals: false
-      },
-      {
-        id: 'FL003',
-        airline: 'American Airlines',
-        departure: { airport: criteria.origin, time: '16:20', date: criteria.departureDate },
-        arrival: { airport: criteria.destination, time: this.calculateArrivalTime('16:20', flightTime), date: criteria.departureDate },
-        price: basePrice - 20,
-        duration: flightTime,
-        stops: 0,
-        class: 'Economy',
-        aircraft: 'Boeing 787-8',
-        baggage: { carry: 1, checked: 1 },
-        wifi: true,
-        meals: true
-      },
-      {
-        id: 'FL004',
-        airline: 'Southwest Airlines',
-        departure: { airport: criteria.origin, time: '12:30', date: criteria.departureDate },
-        arrival: { airport: criteria.destination, time: this.calculateArrivalTime('12:30', this.addLayoverTime(flightTime)), date: criteria.departureDate },
-        price: basePrice - 50,
-        duration: this.addLayoverTime(flightTime),
-        stops: 1,
-        stopover: 'Chicago (MDW)',
-        class: 'Economy',
-        aircraft: 'Boeing 737-800',
-        baggage: { carry: 1, checked: 2 },
-        wifi: true,
-        meals: false
-      },
-      {
-        id: 'FL005',
-        airline: 'JetBlue Airways',
-        departure: { airport: criteria.origin, time: '07:45', date: criteria.departureDate },
-        arrival: { airport: criteria.destination, time: this.calculateArrivalTime('07:45', flightTime), date: criteria.departureDate },
-        price: basePrice + 30,
-        duration: flightTime,
-        stops: 0,
-        class: 'Economy',
-        aircraft: 'Airbus A321',
-        baggage: { carry: 1, checked: 1 },
-        wifi: true,
-        meals: false
-      },
-      {
-        id: 'FL006',
-        airline: 'Alaska Airlines',
-        departure: { airport: criteria.origin, time: '14:00', date: criteria.departureDate },
-        arrival: { airport: criteria.destination, time: this.calculateArrivalTime('14:00', flightTime), date: criteria.departureDate },
-        price: basePrice + 10,
-        duration: flightTime,
-        stops: 0,
-        class: 'Economy',
-        aircraft: 'Boeing 737-900ER',
-        baggage: { carry: 1, checked: 1 },
-        wifi: true,
-        meals: true
+    try {
+      console.log('FlightAgent searching with criteria:', criteria);
+      
+      // Validate required criteria
+      if (!criteria.origin || !criteria.destination || !criteria.departureDate) {
+        throw new Error('Missing required flight search criteria: origin, destination, departureDate');
       }
-    ];
 
-    // Filter based on criteria
-    return mockFlights.filter(flight => {
-      if (criteria.maxPrice && flight.price > criteria.maxPrice) return false;
-      if (criteria.preferNonStop && flight.stops > 0) return false;
-      if (criteria.preferredClass && flight.class !== criteria.preferredClass) return false;
+      // Call Amadeus API
+      const searchParams = {
+        origin: criteria.origin,
+        destination: criteria.destination,
+        departureDate: criteria.departureDate,
+        returnDate: criteria.returnDate,
+        adults: criteria.travelers || 1,
+        maxResults: this.searchConfig.maxResults
+      };
+
+      const flights = await amadeusService.searchFlights(searchParams);
+      console.log(`Found ${flights.length} flights from Amadeus`);
+
+      // Apply client-side filtering based on criteria
+      return this.applyFilters(flights, criteria);
+      
+    } catch (error) {
+      console.error('FlightAgent search error:', error);
+      
+      // Fallback to mock data if API fails (for development)
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Falling back to mock data for development');
+        return this.getMockFlights(criteria);
+      }
+      
+      throw error;
+    }
+  }
+
+  applyFilters(flights, criteria) {
+    return flights.filter(flight => {
+      // Price filter
+      if (criteria.maxPrice && flight.price > criteria.maxPrice) {
+        return false;
+      }
+      
+      // Non-stop preference
+      if (criteria.preferNonStop && flight.stops > 0) {
+        return false;
+      }
+      
+      // Class preference
+      if (criteria.preferredClass && flight.class.toLowerCase() !== criteria.preferredClass.toLowerCase()) {
+        return false;
+      }
+      
       return true;
     });
   }
 
   async rank(results) {
-    // Rank flights based on multiple factors
+    // Enhanced ranking with real flight data
     return results.map(flight => ({
       ...flight,
       score: this.calculateFlightScore(flight)
@@ -128,66 +85,114 @@ export class FlightAgent extends TripPlanningAgent {
   calculateFlightScore(flight) {
     let score = 100;
     
-    // Price factor (lower price = higher score)
-    score -= (flight.price / 10);
+    // Price factor (normalize to reasonable range)
+    const priceScore = Math.max(0, 50 - (flight.price / 20));
+    score += priceScore;
     
-    // Non-stop preference
-    if (flight.stops === 0) score += 20;
+    // Non-stop preference (big bonus)
+    if (flight.stops === 0) {
+      score += 30;
+    } else {
+      score -= (flight.stops * 10);
+    }
     
-    // Duration factor
-    const durationHours = parseFloat(flight.duration.split('h')[0]);
-    score -= durationHours;
+    // Duration factor (convert PT8H30M to hours)
+    const durationHours = this.parseDuration(flight.duration);
+    score -= (durationHours * 2);
     
-    // Time preference (morning and afternoon flights preferred)
+    // Time preference (morning/afternoon flights preferred)
     const departureHour = parseInt(flight.departure.time.split(':')[0]);
-    if (departureHour >= 8 && departureHour <= 16) score += 10;
+    if (departureHour >= 8 && departureHour <= 16) {
+      score += 15;
+    }
+    
+    // Class bonus (business/first class gets small bonus)
+    if (flight.class === 'BUSINESS') score += 10;
+    if (flight.class === 'FIRST') score += 15;
     
     return Math.max(0, score);
   }
 
-  getDestinationData(destination) {
-    const destinationMap = {
-      'Paris': { basePrice: 650, flightTime: '8h 15m' },
-      'London': { basePrice: 580, flightTime: '7h 45m' },
-      'Tokyo': { basePrice: 950, flightTime: '14h 30m' },
-      'Sydney': { basePrice: 1200, flightTime: '19h 45m' },
-      'New York': { basePrice: 320, flightTime: '5h 30m' },
-      'Los Angeles': { basePrice: 380, flightTime: '6h 15m' },
-      'Rome': { basePrice: 620, flightTime: '9h 20m' },
-      'Barcelona': { basePrice: 590, flightTime: '8h 45m' },
-      'Amsterdam': { basePrice: 560, flightTime: '8h 00m' },
-      'Dubai': { basePrice: 720, flightTime: '12h 30m' }
-    };
-
-    const key = Object.keys(destinationMap).find(city => 
-      destination.toLowerCase().includes(city.toLowerCase())
-    );
-    
-    return destinationMap[key] || { basePrice: 450, flightTime: '6h 30m' };
+  parseDuration(duration) {
+    // Parse PT8H30M format to hours
+    const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?/);
+    const hours = parseInt(match[1]) || 0;
+    const minutes = parseInt(match[2]) || 0;
+    return hours + (minutes / 60);
   }
 
-  calculateArrivalTime(departureTime, duration) {
-    const [depHour, depMin] = departureTime.split(':').map(Number);
-    const durationMatch = duration.match(/(\d+)h\s*(\d+)?m?/);
-    const hours = parseInt(durationMatch[1]);
-    const minutes = parseInt(durationMatch[2] || 0);
-    
-    const totalMinutes = depHour * 60 + depMin + hours * 60 + minutes;
-    const arrivalHour = Math.floor(totalMinutes / 60) % 24;
-    const arrivalMin = totalMinutes % 60;
-    
-    return `${arrivalHour.toString().padStart(2, '0')}:${arrivalMin.toString().padStart(2, '0')}`;
+  // Keep mock data as fallback for development
+  getMockFlights(criteria) {
+    return [
+      {
+        id: 'MOCK001',
+        airline: 'AA',
+        departure: { airport: criteria.origin, time: '08:00', date: criteria.departureDate },
+        arrival: { airport: criteria.destination, time: '14:30', date: criteria.departureDate },
+        price: 450,
+        currency: 'USD',
+        duration: 'PT6H30M',
+        stops: 0,
+        class: 'ECONOMY'
+      }
+    ];
   }
 
-  addLayoverTime(baseDuration) {
-    const durationMatch = baseDuration.match(/(\d+)h\s*(\d+)?m?/);
-    const hours = parseInt(durationMatch[1]);
-    const minutes = parseInt(durationMatch[2] || 0);
-    
-    // Add 1-2 hours for layover
-    const layoverHours = 1 + Math.floor(Math.random() * 2);
-    const totalHours = hours + layoverHours;
-    
-    return `${totalHours}h ${minutes}m`;
+  async generateRecommendations(results, task) {
+    if (!results || results.length === 0) {
+      return {
+        recommendations: [],
+        confidence: 0,
+        reasoning: 'No flights found matching your criteria.',
+        metadata: { searchCriteria: task.criteria }
+      };
+    }
+
+    const prompt = `
+You are a travel expert analyzing flight options. Here are the search criteria and results:
+
+Search Criteria:
+- Origin: ${task.criteria.origin}
+- Destination: ${task.criteria.destination} 
+- Departure: ${task.criteria.departureDate}
+- Budget: ${task.criteria.maxPrice ? `$${task.criteria.maxPrice} max` : 'No limit'}
+- Preferences: ${JSON.stringify(task.criteria)}
+
+Flight Options Found:
+${JSON.stringify(results.slice(0, 5), null, 2)}
+
+Please provide:
+1. Your top 3 flight recommendations with clear reasoning
+2. Key factors you considered (price, duration, stops, timing)
+3. Any notable trade-offs or alternatives
+4. Confidence score (0-100) based on options available
+
+Be conversational and helpful, like a knowledgeable travel agent.
+    `;
+
+    try {
+      const aiResponse = await this.generateStructuredResponse(prompt, this.resultSchema);
+      
+      return {
+        recommendations: results.slice(0, 3), // Top 3 flights
+        confidence: aiResponse.content.confidence || 85,
+        reasoning: aiResponse.content.reasoning || 'Based on price, convenience, and travel time.',
+        metadata: {
+          totalFound: results.length,
+          searchCriteria: task.criteria,
+          aiAnalysis: aiResponse.content
+        }
+      };
+    } catch (error) {
+      console.error('AI recommendation generation failed:', error);
+      
+      // Fallback to rule-based recommendations
+      return {
+        recommendations: results.slice(0, 3),
+        confidence: 70,
+        reasoning: `Found ${results.length} flights. Top options selected based on price, duration, and stops.`,
+        metadata: { searchCriteria: task.criteria, aiError: error.message }
+      };
+    }
   }
 }

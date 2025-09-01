@@ -1,4 +1,6 @@
+// src/controllers/tripController.js (updated)
 import { TripOrchestrator } from '../agents/tripOrchestrator.js';
+import { FlightAgent } from '../agents/flightAgent.js';
 
 export const planTrip = async (req, res) => {
   try {
@@ -21,41 +23,55 @@ export const planTrip = async (req, res) => {
       });
     }
 
-    // Initialize orchestrator with AI config
+    // For MVP, we can test just FlightAgent first
+    const testFlightOnly = req.query.flightOnly === 'true';
+    
+    if (testFlightOnly) {
+      const flightAgent = new FlightAgent({
+        provider: process.env.AI_PROVIDER || 'openai',
+        apiKey: process.env.OPENAI_API_KEY
+      });
+
+      const criteria = {
+        origin,
+        destination,
+        departureDate,
+        returnDate,
+        travelers,
+        maxPrice: budget.flight,
+        preferNonStop: preferences.nonStopFlights,
+        preferredClass: preferences.flightClass
+      };
+
+      const result = await flightAgent.execute({ criteria });
+      
+      return res.json({
+        success: result.success,
+        data: result.data,
+        message: result.success ? 'Flight search completed' : 'Flight search failed',
+        debug: { agentUsed: 'FlightAgent', criteria }
+      });
+    }
+
+    // Full trip planning (existing orchestrator logic)
     const aiConfig = {
       provider: process.env.AI_PROVIDER || 'openai',
-      model: process.env.AI_MODEL || 'gpt-3.5-turbo'
+      apiKey: process.env.OPENAI_API_KEY
     };
 
     const orchestrator = new TripOrchestrator(aiConfig);
-
-    // Execute trip planning
     const tripRequest = {
-      destination,
-      origin,
-      departureDate,
-      returnDate: returnDate || departureDate, // Same day trip if no return date
-      travelers,
-      budget,
-      preferences,
-      interests
+      destination, origin, departureDate, returnDate,
+      travelers, budget, preferences, interests
     };
 
     const result = await orchestrator.execute(tripRequest);
 
-    if (result.success) {
-      res.json({
-        success: true,
-        message: 'Trip planned successfully',
-        data: result.data
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        error: result.error,
-        message: 'Failed to plan trip'
-      });
-    }
+    res.json({
+      success: result.success,
+      data: result.data,
+      message: result.success ? 'Trip planned successfully' : 'Trip planning failed'
+    });
 
   } catch (error) {
     console.error('Trip planning error:', error);

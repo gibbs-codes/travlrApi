@@ -26,6 +26,7 @@
   "homepage": "https://github.com/gibbs-codes/travlrApi#readme",
   "description": "Travel API with AI agent flow support",
   "dependencies": {
+    "amadeus": "^11.0.0",
     "axios": "^1.6.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",

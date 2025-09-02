@@ -1,49 +1,32 @@
-// src/services/rapidApiService.js (complete implementation)
 class RapidApiHotelService {
   constructor() {
-    this.apiKey = null;
     this.baseUrl = 'https://booking-com.p.rapidapi.com/v1';
-    this.isEnabled = null;
-    this.initializePromise = null;
+    this.apiKey = null;
+    this.isEnabled = false;
   }
 
-  async initialize() {
-    if (this.initializePromise) {
-      return this.initializePromise;
-    }
-    this.initializePromise = this._doInitialize();
-    return this.initializePromise;
-  }
-
-  async _doInitialize() {
-    console.log('🔧 Initializing RapidAPI service...');
-    
-    // Get API key after environment variables are loaded
-    this.apiKey = process.env.RAPIDAPI_KEY;
-    
+  getApiKey() {
     if (!this.apiKey) {
-      console.error('❌ Missing RapidAPI credentials!');
-      console.error('Please add RAPIDAPI_KEY to your .env file');
-      console.error('Get your key from: https://rapidapi.com/');
-      this.isEnabled = false;
-      return;
+      this.apiKey = process.env.RAPIDAPI_KEY;
+      
+      if (!this.apiKey) {
+        console.error('❌ RAPIDAPI_KEY not found in environment variables');
+        this.isEnabled = false;
+        return null;
+      }
+      
+      this.isEnabled = true;
+      console.log('✅ RapidAPI key loaded successfully');
     }
-
-    this.isEnabled = true;
-    console.log('✅ RapidAPI service initialized successfully');
-  }
-
-  async ensureInitialized() {
-    if (this.isEnabled === null) {
-      await this.initialize();
-    }
+    
+    return this.apiKey;
   }
 
   async searchHotels(searchParams) {
-    await this.ensureInitialized();
+    const apiKey = this.getApiKey();
     
-    if (!this.isEnabled) {
-      throw new Error('RapidAPI service is not properly configured. Check your API credentials.');
+    if (!apiKey) {
+      throw new Error('RapidAPI service not configured - missing RAPIDAPI_KEY in .env file');
     }
 
     try {
@@ -51,134 +34,181 @@ class RapidApiHotelService {
       
       console.log('Searching hotels via RapidAPI:', { destination, checkIn, checkOut });
 
-      // First, get destination ID
-      const destId = await this.getDestinationId(destination);
+      const destId = this.getDestinationId(destination);
+      console.log(`Using destination ID: ${destId} for ${destination}`);
       
-      // Build query parameters
+      // Build query parameters with the EXACT field names the API expects
       const queryParams = new URLSearchParams({
+        // Required fields based on the error message
+        locale: 'en-gb',
+        dest_type: 'city',
         dest_id: destId,
-        search_type: 'city',
-        arrival_date: checkIn,
-        departure_date: checkOut,
-        adults: guests.toString(),
-        room_qty: '1',
+        filter_by_currency: 'USD',
+        order_by: 'popularity',
+        checkin_date: checkIn,
+        checkout_date: checkOut,
+        room_number: '1',
+        adults_number: guests.toString(),
+        
+        // Optional but useful fields
         units: 'metric',
-        temperature_unit: 'c',
-        languagecode: 'en-us',
-        currency_code: 'USD'
+        page_number: '0',
+        include_adjacency: 'true'
       });
 
-      const response = await fetch(`${this.baseUrl}/hotels/search?${queryParams}`, {
+      const url = `${this.baseUrl}/hotels/search?${queryParams}`;
+      console.log('RapidAPI Request URL:', url);
+
+      const response = await fetch(url, {
         method: 'GET',
         headers: {
-          'X-RapidAPI-Key': this.apiKey,
+          'X-RapidAPI-Key': apiKey,
           'X-RapidAPI-Host': 'booking-com.p.rapidapi.com'
         }
       });
 
+      console.log('RapidAPI Response Status:', response.status);
+
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('RapidAPI Error Response:', errorText);
+        
+        if (response.status === 422) {
+          throw new Error(`RapidAPI validation error - check required parameters: ${errorText}`);
+        }
+        
         throw new Error(`RapidAPI error (${response.status}): ${errorText}`);
       }
 
       const data = await response.json();
+      console.log('RapidAPI Response Data Keys:', Object.keys(data));
       
-      if (!data.result || data.result.length === 0) {
+      if (!data.result || !Array.isArray(data.result)) {
+        console.warn('Unexpected API response structure:', data);
         throw new Error(`No hotels found for destination: ${destination}`);
       }
 
+      if (data.result.length === 0) {
+        throw new Error(`No hotels available for ${destination} on ${checkIn} to ${checkOut}`);
+      }
+
+      console.log(`Found ${data.result.length} raw hotels from RapidAPI`);
+      
       const hotels = this.transformHotelData(data.result);
+      console.log(`Successfully transformed ${hotels.length} hotels`);
+      
       return hotels.slice(0, maxResults);
 
     } catch (error) {
       console.error('RapidAPI hotel search error:', error);
       
-      // More helpful error messages
-      if (error.message.includes('401')) {
-        throw new Error('RapidAPI authentication failed. Check your API key.');
+      if (error.message.includes('401') || error.message.includes('403')) {
+        throw new Error('RapidAPI authentication failed. Check your API key and subscription.');
       }
       if (error.message.includes('429')) {
         throw new Error('RapidAPI rate limit exceeded. Please try again later.');
       }
-      if (error.message.includes('destination')) {
-        throw new Error(`Could not find destination: ${searchParams.destination}. Try a major city name.`);
+      if (error.message.includes('422')) {
+        throw new Error('RapidAPI parameter validation failed. API requirements may have changed.');
       }
       
       throw new Error(`Hotel search failed: ${error.message}`);
     }
   }
 
-  async getDestinationId(destination) {
-    try {
-      // Simple destination mapping for common cities
-      const destinationMap = {
-        'paris': '-1456928',
-        'london': '-2601889', 
-        'new york': '20088325',
-        'tokyo': '-246227',
-        'rome': '-126693',
-        'barcelona': '-372490',
-        'amsterdam': '-2140479',
-        'berlin': '-1746443',
-        'madrid': '-390625',
-        'lisbon': '-2167973'
-      };
+  getDestinationId(destination) {
+    // Booking.com destination IDs for major cities
+    const destinationMap = {
+      'paris': '-1456928',
+      'london': '-2601889',
+      'new york': '20088325',
+      'tokyo': '-246227',
+      'rome': '-126693',
+      'barcelona': '-372490',
+      'amsterdam': '-2140479',
+      'berlin': '-1746443',
+      'madrid': '-390625',
+      'lisbon': '-2167973',
+      'prague': '-553173',
+      'vienna': '-1995499',
+      'florence': '-117543',
+      'venice': '-118114',
+      'milan': '-127310',
+      'munich': '-1829149',
+      'zurich': '-2657896'
+    };
 
-      const key = destination.toLowerCase();
-      if (destinationMap[key]) {
-        return destinationMap[key];
-      }
-
-      // For other destinations, use a search API call
-      const searchResponse = await fetch(`${this.baseUrl}/hotels/search-by-coordinates?locale=en-gb&room_number=1&checkin_date=2024-03-15&checkout_date=2024-03-16&filter_by_currency=USD&order_by=popularity&adults_number=2&units=metric&include_adjacency=true&children_ages=5%2C0&page_number=0&categories_filter_ids=class%3A%3A2%2Cclass%3A%3A4%2Cfree_cancellation%3A%3A1&children_number=2&latitude=${destination}&longitude=${destination}`, {
-        headers: {
-          'X-RapidAPI-Key': this.apiKey,
-          'X-RapidAPI-Host': 'booking-com.p.rapidapi.com'
-        }
-      });
-
-      // Fallback to a common destination ID if search fails
-      console.warn(`Could not find destination ID for: ${destination}. Using Paris as fallback.`);
-      return '-1456928'; // Paris fallback
-      
-    } catch (error) {
-      console.warn(`Destination search failed for: ${destination}. Using Paris as fallback.`);
-      return '-1456928'; // Paris fallback
+    const key = destination.toLowerCase().trim();
+    console.log(`Looking up destination ID for: "${key}"`);
+    
+    if (destinationMap[key]) {
+      console.log(`Found destination ID: ${destinationMap[key]}`);
+      return destinationMap[key];
     }
+
+    // Fallback to Paris if destination not found
+    console.warn(`Destination "${destination}" not found in mapping. Using Paris as fallback.`);
+    return '-1456928'; // Paris
   }
 
   transformHotelData(hotelData) {
     return hotelData.map(hotel => {
-      // Handle various data formats from RapidAPI
-      const price = hotel.composite_price_breakdown?.gross_amount_per_night?.value || 
-                   hotel.min_total_price || 
-                   hotel.price_breakdown?.gross_price || 
-                   0;
+      // Handle different price formats from the API
+      let price = 0;
+      if (hotel.composite_price_breakdown?.gross_amount_per_night?.value) {
+        price = hotel.composite_price_breakdown.gross_amount_per_night.value;
+      } else if (hotel.min_total_price) {
+        price = hotel.min_total_price;
+      } else if (hotel.price_breakdown?.gross_price) {
+        price = hotel.price_breakdown.gross_price;
+      } else if (hotel.gross_amount_per_night) {
+        price = hotel.gross_amount_per_night;
+      }
 
-      const rating = hotel.review_score || hotel.scored || 0;
-      
+      // Handle rating (convert from 0-100 to 0-10 scale)
+      let rating = 0;
+      if (hotel.review_score) {
+        rating = hotel.review_score / 10;
+      } else if (hotel.scored) {
+        rating = hotel.scored / 10; 
+      } else if (hotel.review_score_word) {
+        // Sometimes rating comes as words, convert to numbers
+        const ratingMap = {
+          'exceptional': 9.5,
+          'wonderful': 9.0,
+          'excellent': 8.5,
+          'very good': 8.0,
+          'good': 7.5,
+          'pleasant': 7.0,
+          'satisfactory': 6.5
+        };
+        rating = ratingMap[hotel.review_score_word.toLowerCase()] || 7.0;
+      }
+
       return {
-        id: hotel.hotel_id || hotel.id,
+        id: hotel.hotel_id?.toString() || `hotel_${Math.random().toString(36)}`,
         name: hotel.hotel_name || hotel.name || 'Hotel Name Not Available',
         type: 'hotel',
         location: {
-          address: hotel.address || 'Address not available',
-          city: hotel.city || '',
+          address: hotel.address || hotel.hotel_name || 'Address not available',
+          city: hotel.city || destination,
           country: hotel.country_code || '',
-          distance: hotel.distance ? `${hotel.distance} km from center` : 'Distance not available',
+          distance: hotel.distance_to_cc ? 
+            `${hotel.distance_to_cc} km from center` : 
+            (hotel.distance ? `${hotel.distance} from center` : 'Distance not available'),
           coordinates: hotel.latitude && hotel.longitude ? {
-            lat: hotel.latitude,
-            lng: hotel.longitude
+            lat: parseFloat(hotel.latitude),
+            lng: parseFloat(hotel.longitude)
           } : null
         },
-        price: parseFloat(price),
-        currency: hotel.currencycode || 'USD',
-        rating: parseFloat(rating / 10), // RapidAPI often uses 0-100 scale, convert to 0-10
+        price: parseFloat(price) || 0,
+        currency: hotel.currencycode || hotel.currency || 'USD',
+        rating: parseFloat(rating) || 0,
         amenities: this.extractAmenities(hotel),
-        description: hotel.hotel_name_trans || hotel.hotel_name || '',
+        description: hotel.hotel_name_trans || hotel.hotel_name || 'No description available',
         images: hotel.main_photo_url ? [hotel.main_photo_url] : [],
-        availability: hotel.is_free_cancellable ? 'Free cancellation' : 'Standard booking',
-        rawData: hotel // Keep for debugging
+        availability: hotel.is_free_cancellable ? 'Free cancellation available' : 'Standard booking terms',
+        rawData: hotel // Keep original data for debugging
       };
     });
   }
@@ -186,19 +216,22 @@ class RapidApiHotelService {
   extractAmenities(hotel) {
     const amenities = [];
     
-    // Common amenity mapping
+    // Map known boolean properties to amenity names
     if (hotel.has_free_wifi || hotel.free_wifi) amenities.push('wifi');
     if (hotel.has_swimming_pool) amenities.push('pool');
-    if (hotel.has_fitness_center) amenities.push('gym');  
+    if (hotel.has_fitness_center) amenities.push('gym');
     if (hotel.has_parking) amenities.push('parking');
     if (hotel.has_restaurant) amenities.push('restaurant');
     if (hotel.has_bar) amenities.push('bar');
     if (hotel.has_spa) amenities.push('spa');
     if (hotel.has_room_service) amenities.push('room-service');
     if (hotel.is_free_cancellable) amenities.push('free-cancellation');
+    if (hotel.has_business_center) amenities.push('business-center');
+    if (hotel.has_air_conditioning) amenities.push('air-conditioning');
     
-    // Add some default amenities for realistic data
-    amenities.push('wifi', '24h-front-desk');
+    // Add common default amenities
+    if (!amenities.includes('wifi')) amenities.push('wifi');
+    amenities.push('24h-front-desk');
     
     return [...new Set(amenities)]; // Remove duplicates
   }

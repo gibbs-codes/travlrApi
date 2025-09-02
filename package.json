@@ -35,7 +35,8 @@
     "mongoose": "^8.0.3",
     "node-fetch": "^3.3.2",
     "ollama": "^0.5.0",
-    "openai": "^4.20.1"
+    "openai": "^4.104.0",
+    "rapidapi-connect": "^0.0.6"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

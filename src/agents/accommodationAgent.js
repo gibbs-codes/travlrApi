@@ -1,4 +1,6 @@
+// src/agents/accommodationAgent.js (final version with real API)
 import { TripPlanningAgent } from './baseAgent.js';
+import bookingService from '../services/bookingService.js';
 
 export class AccommodationAgent extends TripPlanningAgent {
   constructor(aiConfig = {}) {
@@ -8,191 +10,79 @@ export class AccommodationAgent extends TripPlanningAgent {
       aiConfig,
       {
         maxResults: 15,
-        providers: ['booking.com', 'hotels.com', 'airbnb']
+        providers: ['rapidapi', 'booking.com']
       }
     );
   }
 
   async search(criteria) {
-    // Enhanced mock accommodation search with dynamic data
-    const destinationData = this.getDestinationAccommodations(criteria.destination);
-    const basePrices = destinationData.priceRange;
-    
-    const mockAccommodations = [
-      {
-        id: 'HTL001',
-        name: `${destinationData.hotelPrefix} Grand Plaza Hotel`,
-        type: 'hotel',
-        location: { 
-          address: `123 ${destinationData.streetName}`, 
-          distance: '0.5 miles from city center',
-          neighborhood: destinationData.area1 
-        },
-        price: basePrices.luxury,
-        rating: 4.5,
-        amenities: ['wifi', 'pool', 'gym', 'parking', 'breakfast', 'spa', 'concierge', 'room-service'],
-        rooms: 'Deluxe King Room with City View',
-        checkIn: criteria.checkInDate,
-        checkOut: criteria.checkOutDate,
-        photos: 3,
-        description: `Luxury hotel in the heart of ${criteria.destination} with premium amenities`,
-        cancellation: 'Free cancellation until 24h before check-in'
-      },
-      {
-        id: 'HTL002',
-        name: `${destinationData.area2} Boutique Inn`,
-        type: 'hotel',
-        location: { 
-          address: `456 ${destinationData.streetName2}`, 
-          distance: '1.2 miles from city center',
-          neighborhood: destinationData.area2 
-        },
-        price: basePrices.mid,
-        rating: 4.2,
-        amenities: ['wifi', 'breakfast', 'parking', 'fitness-center'],
-        rooms: 'Standard Queen Room',
-        checkIn: criteria.checkInDate,
-        checkOut: criteria.checkOutDate,
-        photos: 2,
-        description: 'Charming boutique hotel with personalized service',
-        cancellation: 'Free cancellation until 48h before check-in'
-      },
-      {
-        id: 'HTL003',
-        name: `${destinationData.hotelPrefix} Business Hotel`,
-        type: 'hotel',
-        location: { 
-          address: `789 Business District`, 
-          distance: '2.1 miles from city center',
-          neighborhood: 'Financial District' 
-        },
-        price: basePrices.budget + 40,
-        rating: 4.0,
-        amenities: ['wifi', 'business-center', 'parking', '24h-front-desk'],
-        rooms: 'Executive Double Room',
-        checkIn: criteria.checkInDate,
-        checkOut: criteria.checkOutDate,
-        photos: 2,
-        description: 'Modern business hotel with excellent connectivity',
-        cancellation: 'Free cancellation until 72h before check-in'
-      },
-      {
-        id: 'AIR001',
-        name: `Modern ${destinationData.area1} Apartment`,
-        type: 'airbnb',
-        location: { 
-          address: `321 ${destinationData.streetName}`, 
-          distance: '0.3 miles from city center',
-          neighborhood: destinationData.area1 
-        },
-        price: basePrices.budget + 20,
-        rating: 4.8,
-        amenities: ['wifi', 'kitchen', 'washer', 'parking', 'balcony'],
-        rooms: 'Entire 2BR Apartment',
-        checkIn: criteria.checkInDate,
-        checkOut: criteria.checkOutDate,
-        photos: 4,
-        description: 'Stylish apartment with full kitchen and great location',
-        cancellation: 'Moderate cancellation policy',
-        hostRating: 4.9,
-        instantBook: true
-      },
-      {
-        id: 'AIR002',
-        name: `Cozy ${destinationData.area2} Studio`,
-        type: 'airbnb',
-        location: { 
-          address: `654 ${destinationData.streetName2}`, 
-          distance: '0.8 miles from city center',
-          neighborhood: destinationData.area2 
-        },
-        price: basePrices.budget,
-        rating: 4.6,
-        amenities: ['wifi', 'kitchen', 'washer', 'workspace'],
-        rooms: 'Private Studio',
-        checkIn: criteria.checkInDate,
-        checkOut: criteria.checkOutDate,
-        photos: 3,
-        description: 'Perfect for solo travelers or couples, fully equipped',
-        cancellation: 'Flexible cancellation',
-        hostRating: 4.7,
-        instantBook: false
-      },
-      {
-        id: 'HTL004',
-        name: `${destinationData.hotelPrefix} Luxury Resort`,
-        type: 'resort',
-        location: { 
-          address: `1 Resort Way`, 
-          distance: '3.5 miles from city center',
-          neighborhood: 'Resort District' 
-        },
-        price: basePrices.luxury + 100,
-        rating: 4.7,
-        amenities: ['wifi', 'pool', 'spa', 'gym', 'restaurants', 'bar', 'valet-parking', '24h-room-service', 'golf'],
-        rooms: 'Deluxe Resort Suite',
-        checkIn: criteria.checkInDate,
-        checkOut: criteria.checkOutDate,
-        photos: 5,
-        description: 'Ultimate luxury resort experience with world-class amenities',
-        cancellation: 'Free cancellation until 48h before check-in'
-      },
-      {
-        id: 'HST001',
-        name: `${destinationData.area1} Backpacker Hostel`,
-        type: 'hostel',
-        location: { 
-          address: `987 Backpacker St`, 
-          distance: '0.7 miles from city center',
-          neighborhood: destinationData.area1 
-        },
-        price: basePrices.budget - 40,
-        rating: 4.1,
-        amenities: ['wifi', 'shared-kitchen', 'common-room', 'lockers', 'laundry'],
-        rooms: 'Private Room in Hostel',
-        checkIn: criteria.checkInDate,
-        checkOut: criteria.checkOutDate,
-        photos: 2,
-        description: 'Clean, safe hostel perfect for budget travelers',
-        cancellation: 'Free cancellation until 24h before check-in'
-      },
-      {
-        id: 'BB001',
-        name: `${destinationData.area2} Family B&B`,
-        type: 'bed-breakfast',
-        location: { 
-          address: `555 Residential Ave`, 
-          distance: '1.5 miles from city center',
-          neighborhood: destinationData.area2 
-        },
-        price: basePrices.mid - 30,
-        rating: 4.4,
-        amenities: ['wifi', 'breakfast', 'parking', 'garden', 'pet-friendly'],
-        rooms: 'Cozy Double Room',
-        checkIn: criteria.checkInDate,
-        checkOut: criteria.checkOutDate,
-        photos: 3,
-        description: 'Warm family-run B&B with homemade breakfast',
-        cancellation: 'Free cancellation until 48h before check-in'
+    try {
+      console.log('AccommodationAgent searching with criteria:', criteria);
+      
+      // Validate required criteria
+      if (!criteria.destination || !criteria.checkInDate || !criteria.checkOutDate) {
+        throw new Error('Missing required accommodation criteria: destination, checkInDate, checkOutDate');
       }
-    ];
 
-    // Filter based on criteria
-    return mockAccommodations.filter(accommodation => {
-      if (criteria.maxPrice && accommodation.price > criteria.maxPrice) return false;
-      if (criteria.minRating && accommodation.rating < criteria.minRating) return false;
-      if (criteria.accommodationType && accommodation.type !== criteria.accommodationType) return false;
-      if (criteria.requiredAmenities) {
+      // Call RapidAPI via BookingService
+      const searchParams = {
+        destination: criteria.destination,
+        checkIn: criteria.checkInDate,
+        checkOut: criteria.checkOutDate,
+        guests: criteria.guests || criteria.travelers || 1,
+        maxResults: this.searchConfig.maxResults
+      };
+
+      const accommodations = await bookingService.searchHotels(searchParams);
+      console.log(`Found ${accommodations.length} accommodations from RapidAPI`);
+
+      // Apply client-side filtering
+      return this.applyFilters(accommodations, criteria);
+      
+    } catch (error) {
+      console.error('AccommodationAgent search error:', error);
+      
+      // Fallback to mock data if API fails (for development)
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Falling back to mock data for development');
+        return this.getMockAccommodations(criteria);
+      }
+      
+      throw error;
+    }
+  }
+
+  applyFilters(accommodations, criteria) {
+    return accommodations.filter(accommodation => {
+      // Price filter
+      if (criteria.maxPrice && accommodation.price > criteria.maxPrice) {
+        return false;
+      }
+      
+      // Rating filter
+      if (criteria.minRating && accommodation.rating < criteria.minRating) {
+        return false;
+      }
+      
+      // Accommodation type filter
+      if (criteria.accommodationType && accommodation.type !== criteria.accommodationType) {
+        return false;
+      }
+      
+      // Required amenities filter
+      if (criteria.requiredAmenities && criteria.requiredAmenities.length > 0) {
         const hasAllAmenities = criteria.requiredAmenities.every(
-          amenity => accommodation.amenities.includes(amenity)
+          amenity => accommodation.amenities.includes(amenity.toLowerCase())
         );
         if (!hasAllAmenities) return false;
       }
+      
       return true;
     });
   }
 
   async rank(results) {
+    // Enhanced ranking with real accommodation data
     return results.map(accommodation => ({
       ...accommodation,
       score: this.calculateAccommodationScore(accommodation)
@@ -202,80 +92,121 @@ export class AccommodationAgent extends TripPlanningAgent {
   calculateAccommodationScore(accommodation) {
     let score = 100;
     
-    // Price factor (lower price = higher score)
-    score -= (accommodation.price / 5);
+    // Price factor (normalize to reasonable range - lower price = better score)
+    const priceScore = Math.max(0, 50 - (accommodation.price / 10));
+    score += priceScore;
     
-    // Rating factor
-    score += (accommodation.rating * 10);
+    // Rating factor (big impact)
+    score += (accommodation.rating * 15);
     
     // Location factor (closer to center = higher score)
-    const distance = parseFloat(accommodation.location.distance.split(' ')[0]);
-    score -= (distance * 5);
+    if (accommodation.location?.distance) {
+      const distanceMatch = accommodation.location.distance.match(/(\d+\.?\d*)/);
+      if (distanceMatch) {
+        const distance = parseFloat(distanceMatch[1]);
+        score -= (distance * 3);
+      }
+    }
     
     // Amenity bonus
-    score += (accommodation.amenities.length * 2);
+    const premiumAmenities = ['pool', 'spa', 'gym', 'restaurant', 'bar', 'room-service'];
+    const amenityBonus = accommodation.amenities?.filter(a => premiumAmenities.includes(a)).length * 5;
+    score += amenityBonus;
     
-    // Type preference (hotels slightly preferred for reliability)
-    if (accommodation.type === 'hotel') score += 5;
+    // Type preference
+    if (accommodation.type === 'hotel') score += 10;
+    if (accommodation.type === 'resort') score += 15;
     
     return Math.max(0, score);
   }
 
-  getDestinationAccommodations(destination) {
-    const destinationMap = {
-      'Paris': {
-        hotelPrefix: 'Le',
-        area1: 'Champs-Élysées',
-        area2: 'Marais',
-        streetName: 'Rue de Rivoli',
-        streetName2: 'Boulevard Saint-Germain',
-        priceRange: { budget: 80, mid: 150, luxury: 280 }
-      },
-      'London': {
-        hotelPrefix: 'The',
-        area1: 'Covent Garden',
-        area2: 'Shoreditch',
-        streetName: 'Oxford Street',
-        streetName2: 'King\'s Road',
-        priceRange: { budget: 90, mid: 160, luxury: 320 }
-      },
-      'Tokyo': {
-        hotelPrefix: 'Tokyo',
-        area1: 'Shibuya',
-        area2: 'Asakusa',
-        streetName: 'Ginza Street',
-        streetName2: 'Omotesando Avenue',
-        priceRange: { budget: 70, mid: 140, luxury: 350 }
-      },
-      'New York': {
-        hotelPrefix: 'Manhattan',
-        area1: 'Times Square',
-        area2: 'SoHo',
-        streetName: 'Broadway',
-        streetName2: 'Fifth Avenue',
-        priceRange: { budget: 120, mid: 220, luxury: 450 }
-      },
-      'Rome': {
-        hotelPrefix: 'Roma',
-        area1: 'Trastevere',
-        area2: 'Spanish Steps',
-        streetName: 'Via del Corso',
-        streetName2: 'Via Veneto',
-        priceRange: { budget: 75, mid: 135, luxury: 260 }
+  // Keep mock data as fallback for development
+  getMockAccommodations(criteria) {
+    return [
+      {
+        id: 'MOCK_HTL001',
+        name: 'Mock Grand Hotel',
+        type: 'hotel',
+        location: { 
+          address: '123 Mock Street', 
+          distance: '0.5 km from center',
+          city: criteria.destination
+        },
+        price: 180,
+        currency: 'USD',
+        rating: 4.3,
+        amenities: ['wifi', 'pool', 'gym', 'breakfast', 'parking'],
+        description: 'Comfortable hotel in city center',
+        images: [],
+        availability: 'Available for selected dates'
       }
-    };
+    ];
+  }
 
-    const key = Object.keys(destinationMap).find(city => 
-      destination.toLowerCase().includes(city.toLowerCase())
-    );
-    
-    return destinationMap[key] || {
-      hotelPrefix: 'City',
-      area1: 'Downtown',
-      area2: 'Historic District',
-      streetName: 'Main Street',
-      streetName2: 'Central Avenue',
-      priceRange: { budget: 80, mid: 150, luxury: 280 }
-    };
+  async generateRecommendations(results, task) {
+    if (!results || results.length === 0) {
+      return {
+        recommendations: [],
+        confidence: 0,
+        reasoning: 'No accommodations found matching your criteria.',
+        metadata: { searchCriteria: task.criteria }
+      };
+    }
+
+    const prompt = `
+You are a travel expert analyzing accommodation options. Here are the search criteria and results:
+
+Search Criteria:
+- Destination: ${task.criteria.destination}
+- Check-in: ${task.criteria.checkInDate}
+- Check-out: ${task.criteria.checkOutDate}
+- Guests: ${task.criteria.guests || task.criteria.travelers || 1}
+- Budget: ${task.criteria.maxPrice ? `$${task.criteria.maxPrice} max per night` : 'No limit'}
+- Required amenities: ${task.criteria.requiredAmenities?.join(', ') || 'None specified'}
+
+Accommodation Options (Top 5):
+${JSON.stringify(results.slice(0, 5).map(h => ({
+  name: h.name,
+  type: h.type,
+  price: h.price,
+  currency: h.currency,
+  rating: h.rating,
+  location: { distance: h.location?.distance, address: h.location?.address?.substring(0, 50) },
+  amenities: h.amenities?.slice(0, 8) // Top amenities only
+})), null, 2)}
+
+Please provide:
+1. Your top 3 accommodation recommendations with clear reasoning
+2. Key factors you considered (price, location, rating, amenities)
+3. Any notable trade-offs or alternatives
+4. Confidence score (0-100) based on options available
+
+Be conversational and helpful, like a knowledgeable travel agent.
+    `;
+
+    try {
+      const aiResponse = await this.generateStructuredResponse(prompt, this.resultSchema);
+      
+      return {
+        recommendations: results.slice(0, 3), // Top 3 accommodations
+        confidence: aiResponse.content.confidence || 85,
+        reasoning: aiResponse.content.reasoning || 'Based on price, location, rating, and amenities.',
+        metadata: {
+          totalFound: results.length,
+          searchCriteria: task.criteria,
+          aiAnalysis: aiResponse.content
+        }
+      };
+    } catch (error) {
+      console.error('AI recommendation generation failed:', error);
+      
+      // Fallback to rule-based recommendations
+      return {
+        recommendations: results.slice(0, 3),
+        confidence: 70,
+        reasoning: `Found ${results.length} accommodations. Top options selected based on rating, location, and price.`,
+        metadata: { searchCriteria: task.criteria, aiError: error.message }
+      };
+    }
   }
 }

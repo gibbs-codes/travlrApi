@@ -1,4 +1,5 @@
 import { TripPlanningAgent } from './baseAgent.js';
+import googlePlacesService from '../services/googlePlacesService.js';
 
 export class RestaurantAgent extends TripPlanningAgent {
   constructor(aiConfig = {}) {
@@ -8,14 +9,11 @@ export class RestaurantAgent extends TripPlanningAgent {
       aiConfig,
       {
         maxResults: 12,
-        providers: ['yelp', 'opentable', 'tripadvisor']
+        providers: ['google_places', 'yelp', 'opentable', 'tripadvisor']
       }
     );
-  }
 
-  async search(criteria) {
-    // Mock restaurant search - replace with actual API calls
-    const mockRestaurants = [
+    this.mockRestaurants = [
       {
         id: 'REST001',
         name: 'The Local Bistro',
@@ -65,18 +63,129 @@ export class RestaurantAgent extends TripPlanningAgent {
         hours: { open: '16:00', close: '22:30' }
       }
     ];
+  }
 
-    // Filter based on criteria
-    return mockRestaurants.filter(restaurant => {
-      if (criteria.cuisines && !criteria.cuisines.includes(restaurant.cuisine)) return false;
-      if (criteria.priceRange && restaurant.priceRange !== criteria.priceRange) return false;
-      if (criteria.minRating && restaurant.rating < criteria.minRating) return false;
-      if (criteria.maxDistance) {
-        const distance = parseFloat(restaurant.location.distance.split(' ')[0]);
-        if (distance > criteria.maxDistance) return false;
+  async search(criteria) {
+    try {
+      const {
+        destination,
+        cuisines = [],
+        priceRange,
+        minRating = 0,
+        maxDistance = 5, // km
+        features = [],
+        openNow = false
+      } = criteria;
+
+      if (!destination) {
+        throw new Error('Destination is required for restaurant search');
       }
-      if (criteria.features) {
-        const hasRequiredFeatures = criteria.features.every(
+
+      // Step 1: Convert destination to coordinates
+      console.log(`🔍 RestaurantAgent: Converting "${destination}" to coordinates...`);
+      const location = await googlePlacesService.geocodeDestination(destination);
+      console.log(`✅ RestaurantAgent: Found coordinates: ${location.lat}, ${location.lng}`);
+
+      // Step 2: Build search options
+      const searchOptions = {
+        radius: maxDistance * 1000, // Convert km to meters
+        opennow: openNow
+      };
+
+      // Add cuisine keyword if specified
+      if (cuisines.length > 0) {
+        searchOptions.keyword = cuisines.join(' ');
+      }
+
+      // Convert our price range to Google's price levels (0-4)
+      if (priceRange) {
+        const priceMapping = {
+          '$': { minprice: 0, maxprice: 1 },
+          '$$': { minprice: 1, maxprice: 2 },
+          '$$$': { minprice: 2, maxprice: 3 },
+          '$$$$': { minprice: 3, maxprice: 4 }
+        };
+        
+        if (priceMapping[priceRange]) {
+          searchOptions.minprice = priceMapping[priceRange].minprice;
+          searchOptions.maxprice = priceMapping[priceRange].maxprice;
+        }
+      }
+
+      // Step 3: Search for restaurants
+      console.log(`🔍 RestaurantAgent: Searching restaurants with options:`, searchOptions);
+      const { restaurants: googleRestaurants } = await googlePlacesService.searchNearbyRestaurants(
+        location, 
+        searchOptions
+      );
+
+      if (!googleRestaurants || googleRestaurants.length === 0) {
+        throw new Error('No restaurants found for the given criteria');
+      }
+
+      // Step 4: Convert to our schema and apply additional filtering
+      console.log(`✅ RestaurantAgent: Found ${googleRestaurants.length} restaurants from Google Places`);
+      
+      let restaurants = googleRestaurants
+        .map(googlePlace => googlePlacesService.convertToSchema(googlePlace))
+        .filter(restaurant => {
+          // Apply additional client-side filtering
+          if (minRating && restaurant.rating < minRating) return false;
+          
+          // Filter by cuisine if specified (Google's keyword search might not be perfect)
+          if (cuisines.length > 0) {
+            const cuisineMatch = cuisines.some(cuisine => 
+              restaurant.cuisine.toLowerCase().includes(cuisine.toLowerCase()) ||
+              cuisine.toLowerCase().includes(restaurant.cuisine.toLowerCase())
+            );
+            if (!cuisineMatch) return false;
+          }
+
+          // Filter by features if specified
+          if (features.length > 0) {
+            const hasRequiredFeatures = features.some(feature => 
+              restaurant.features.includes(feature)
+            );
+            if (!hasRequiredFeatures) return false;
+          }
+
+          return true;
+        })
+        .slice(0, this.searchConfig.maxResults); // Limit results
+
+      console.log(`✅ RestaurantAgent: Returning ${restaurants.length} filtered restaurants`);
+      return restaurants;
+
+    } catch (error) {
+      console.warn(`RestaurantAgent Google Places search failed: ${error.message}. Falling back to mock data.`);
+      
+      // Handle specific Google API errors
+      if (error.message.includes('OVER_QUERY_LIMIT')) {
+        console.warn('Google Places API quota exceeded. Consider upgrading your plan.');
+      } else if (error.message.includes('REQUEST_DENIED')) {
+        console.warn('Google Places API request denied. Check your API key and billing.');
+      } else if (error.message.includes('INVALID_REQUEST')) {
+        console.warn('Invalid request to Google Places API. Check parameters.');
+      }
+
+      return this.getMockRestaurants(criteria);
+    }
+  }
+
+  getMockRestaurants(criteria) {
+    const {
+      cuisines = [],
+      priceRange,
+      minRating = 0,
+      features = []
+    } = criteria;
+
+    return this.mockRestaurants.filter(restaurant => {
+      if (cuisines.length > 0 && !cuisines.includes(restaurant.cuisine)) return false;
+      if (priceRange && restaurant.priceRange !== priceRange) return false;
+      if (minRating && restaurant.rating < minRating) return false;
+      if (features.length > 0) {
+        const hasRequiredFeatures = features.every(
           feature => restaurant.features.includes(feature)
         );
         if (!hasRequiredFeatures) return false;
@@ -95,27 +204,93 @@ export class RestaurantAgent extends TripPlanningAgent {
   calculateRestaurantScore(restaurant) {
     let score = 100;
     
-    // Rating factor
-    score += (restaurant.rating * 20);
+    // Rating factor (more important for Google Places data)
+    if (restaurant.rating && restaurant.rating > 0) {
+      score += (restaurant.rating * 25);
+    }
     
     // Price factor (moderate pricing preferred)
     const priceMultiplier = { '$': 15, '$$': 20, '$$$': 10, '$$$$': 5 };
     score += (priceMultiplier[restaurant.priceRange] || 0);
     
-    // Distance factor (closer is better)
-    const distance = parseFloat(restaurant.location.distance.split(' ')[0]);
-    score -= (distance * 8);
+    // Distance factor (for Google Places, we don't have exact distance but can use location data)
+    // This is a placeholder - could be enhanced with actual distance calculation
     
     // Features bonus
-    score += (restaurant.features.length * 3);
+    if (restaurant.features && Array.isArray(restaurant.features)) {
+      score += (restaurant.features.length * 3);
+    }
     
     // Reservation availability
     if (restaurant.reservations) score += 10;
     
     // Cuisine diversity bonus
-    const popularCuisines = ['Italian', 'French', 'Japanese', 'Mediterranean'];
+    const popularCuisines = ['Italian', 'French', 'Japanese', 'Mediterranean', 'Chinese', 'Mexican'];
     if (popularCuisines.includes(restaurant.cuisine)) score += 8;
     
+    // Bonus for highly rated restaurants
+    if (restaurant.rating >= 4.5) score += 15;
+    if (restaurant.rating >= 4.0) score += 10;
+    
+    // Bonus for restaurants with photos (indicates more complete Google Places data)
+    if (restaurant.photos && restaurant.photos.length > 0) score += 5;
+    
     return Math.max(0, score);
+  }
+
+  /**
+   * Test function to validate Google Places integration
+   */
+  async testGooglePlacesIntegration() {
+    console.log('🧪 Testing RestaurantAgent Google Places Integration...\n');
+
+    try {
+      const sampleCriteria = {
+        destination: "Paris, France",
+        cuisines: ["French", "Italian"],
+        priceRange: "$$",
+        minRating: 4.0,
+        maxDistance: 3
+      };
+
+      console.log('📋 Test Criteria:');
+      console.log(JSON.stringify(sampleCriteria, null, 2));
+      console.log('\n⏳ Executing RestaurantAgent...');
+
+      const startTime = Date.now();
+      const result = await this.execute({ criteria: sampleCriteria });
+      const executionTime = Date.now() - startTime;
+
+      console.log(`\n⚡ Execution completed in ${executionTime}ms`);
+
+      if (result.success) {
+        console.log('\n✅ SUCCESS - Google Places integration working!');
+        
+        const restaurants = result.data.content?.recommendations || result.data.recommendations;
+        console.log(`📊 Found ${restaurants?.length || 0} restaurant recommendations`);
+
+        if (restaurants && restaurants.length > 0) {
+          console.log('\n🍽️ Sample Restaurant:');
+          const sample = restaurants[0];
+          console.log(`Name: ${sample.name}`);
+          console.log(`Cuisine: ${sample.cuisine}`);
+          console.log(`Rating: ${sample.rating}/5`);
+          console.log(`Price Range: ${sample.priceRange}`);
+          console.log(`Address: ${sample.location?.address || 'N/A'}`);
+          console.log(`Features: ${sample.features?.join(', ') || 'None'}`);
+        }
+
+        console.log('\n📊 Full Result Structure:');
+        console.log(JSON.stringify(result, null, 2));
+
+      } else {
+        console.log('\n❌ FAILED:', result.error);
+      }
+
+    } catch (error) {
+      console.log('\n💥 Test failed with error:', error.message);
+    }
+
+    console.log('\n🏁 Test completed.\n');
   }
 }

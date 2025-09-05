@@ -108,10 +108,28 @@ export class ActivityAgent extends TripPlanningAgent {
 
       const response = await this.generateStructuredResponse(prompt, activitySchema);
       
-      if (response && response.recommendations && Array.isArray(response.recommendations)) {
-        return response.recommendations;
+      // More robust response parsing
+      let recommendations = null;
+      
+      if (response) {
+        // Try different possible response structures
+        if (response.content && response.content.recommendations && Array.isArray(response.content.recommendations)) {
+          recommendations = response.content.recommendations;
+        } else if (response.recommendations && Array.isArray(response.recommendations)) {
+          recommendations = response.recommendations;
+        } else if (response.content && response.content.activities && Array.isArray(response.content.activities)) {
+          recommendations = response.content.activities;
+        } else if (response.activities && Array.isArray(response.activities)) {
+          recommendations = response.activities;
+        } else if (Array.isArray(response)) {
+          recommendations = response;
+        }
+      }
+      
+      if (recommendations && Array.isArray(recommendations) && recommendations.length > 0) {
+        return recommendations;
       } else {
-        throw new Error('Invalid AI response format');
+        throw new Error(`Invalid AI response format. Expected array of recommendations, got: ${typeof response}`);
       }
     } catch (error) {
       console.warn(`ActivityAgent AI search failed: ${error.message}. Falling back to mock data.`);

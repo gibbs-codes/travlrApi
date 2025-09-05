@@ -89,13 +89,26 @@ export class TripPlanningAgent extends BaseAgent {
   }
 
   async generateRecommendations(results, task) {
+    // Simplify results to avoid complex JSON that might cause parsing issues
+    const simplifiedResults = results.map(result => ({
+      id: result.id,
+      type: result.type,
+      provider: result.provider,
+      service: result.service,
+      estimatedCost: result.estimatedCost,
+      estimatedTime: result.estimatedTime,
+      features: result.features,
+      summary: result.summary || 'Transportation option'
+    }));
+
     const prompt = `
 Based on the following search results and user criteria, provide top recommendations:
 
 User Criteria: ${JSON.stringify(task.criteria)}
-Search Results: ${JSON.stringify(results)}
+Search Results: ${JSON.stringify(simplifiedResults)}
 
 Please analyze and recommend the best options, explaining your reasoning.
+Respond with a valid JSON object only, no additional text.
     `;
 
     return await this.generateStructuredResponse(prompt, this.resultSchema);

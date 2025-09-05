@@ -1,4 +1,5 @@
 import { TripPlanningAgent } from './baseAgent.js';
+import googlePlacesService from '../services/googlePlacesService.js';
 
 export class TransportationAgent extends TripPlanningAgent {
   constructor(aiConfig = {}) {
@@ -14,7 +15,75 @@ export class TransportationAgent extends TripPlanningAgent {
   }
 
   async search(criteria) {
-    // Mock transportation search - replace with actual API calls
+    try {
+      // Use Google Directions API for real route data
+      if (!criteria.origin || !criteria.destination) {
+        throw new Error('Origin and destination are required for transportation search');
+      }
+
+      // Determine travel modes based on criteria
+      let travelModes = ['driving', 'transit', 'walking'];
+      if (criteria.transportTypes) {
+        travelModes = this.mapTransportTypesToModes(criteria.transportTypes);
+      }
+      if (criteria.includeBicycling) {
+        travelModes.push('bicycling');
+      }
+
+      // Get routes from Google Directions API
+      const routes = await googlePlacesService.getTransportationRoutes(
+        criteria.origin, 
+        criteria.destination, 
+        travelModes
+      );
+
+      // Filter based on criteria
+      return routes.filter(route => {
+        if (criteria.maxCost && route.estimatedCost > criteria.maxCost) return false;
+        if (criteria.transportTypes && !criteria.transportTypes.includes(route.type)) return false;
+        if (criteria.minCapacity && route.capacity < criteria.minCapacity) return false;
+        if (criteria.maxTime) {
+          const timeInMinutes = this.parseTimeToMinutes(route.estimatedTime);
+          if (timeInMinutes > criteria.maxTime) return false;
+        }
+        return true;
+      });
+
+    } catch (error) {
+      console.log(`Google Directions API unavailable, using fallback data: ${error.message}`);
+      return this.getMockTransportOptions(criteria);
+    }
+  }
+
+  mapTransportTypesToModes(transportTypes) {
+    const modeMap = {
+      'driving': 'driving',
+      'public': 'transit',
+      'transit': 'transit',
+      'walking': 'walking',
+      'bicycle': 'bicycling',
+      'bicycling': 'bicycling'
+    };
+
+    return transportTypes.map(type => modeMap[type] || 'driving').filter(Boolean);
+  }
+
+  parseTimeToMinutes(timeString) {
+    if (typeof timeString === 'string') {
+      if (timeString.includes('hour')) {
+        const hours = parseInt(timeString.match(/(\d+)\s*hour/i)?.[1] || '0');
+        const minutes = parseInt(timeString.match(/(\d+)\s*min/i)?.[1] || '0');
+        return hours * 60 + minutes;
+      } else if (timeString.includes('min')) {
+        return parseInt(timeString.match(/(\d+)/)?.[1] || '0');
+      } else if (timeString.includes('day')) {
+        return 480; // 8 hours for full day
+      }
+    }
+    return parseInt(timeString) || 60;
+  }
+
+  getMockTransportOptions(criteria) {
     const mockTransportOptions = [
       {
         id: 'TRANS001',
@@ -25,7 +94,11 @@ export class TransportationAgent extends TripPlanningAgent {
         estimatedTime: '15 minutes',
         availability: 'immediate',
         capacity: 4,
-        features: ['door_to_door', 'app_booking']
+        features: ['door_to_door', 'app_booking'],
+        route: {
+          distance: '8.2 km',
+          duration: '15 mins'
+        }
       },
       {
         id: 'TRANS002',
@@ -36,7 +109,11 @@ export class TransportationAgent extends TripPlanningAgent {
         estimatedTime: '12 minutes',
         availability: 'immediate',
         capacity: 4,
-        features: ['door_to_door', 'app_booking', 'driver_rating']
+        features: ['door_to_door', 'app_booking', 'driver_rating'],
+        route: {
+          distance: '8.2 km',
+          duration: '12 mins'
+        }
       },
       {
         id: 'TRANS003',
@@ -47,7 +124,14 @@ export class TransportationAgent extends TripPlanningAgent {
         estimatedTime: '35 minutes',
         availability: '5 minutes',
         capacity: 50,
-        features: ['eco_friendly', 'fixed_schedule']
+        features: ['eco_friendly', 'fixed_schedule'],
+        route: {
+          distance: '12.4 km',
+          duration: '35 mins',
+          transitDetails: {
+            steps: ['Walk to Station A', 'Take Line 1 to Station B', 'Transfer to Line 3', 'Walk to destination']
+          }
+        }
       },
       {
         id: 'TRANS004',
@@ -58,7 +142,11 @@ export class TransportationAgent extends TripPlanningAgent {
         estimatedTime: 'full day',
         availability: '30 minutes',
         capacity: 4,
-        features: ['flexibility', 'luggage_space', 'parking_required']
+        features: ['flexibility', 'luggage_space', 'parking_required'],
+        route: {
+          distance: 'Various',
+          duration: 'Full day'
+        }
       },
       {
         id: 'TRANS005',
@@ -69,7 +157,11 @@ export class TransportationAgent extends TripPlanningAgent {
         estimatedTime: '18 minutes',
         availability: '10 minutes',
         capacity: 4,
-        features: ['cash_payment', 'local_driver']
+        features: ['cash_payment', 'local_driver'],
+        route: {
+          distance: '8.2 km',
+          duration: '18 mins'
+        }
       }
     ];
 
@@ -79,9 +171,7 @@ export class TransportationAgent extends TripPlanningAgent {
       if (criteria.transportTypes && !criteria.transportTypes.includes(option.type)) return false;
       if (criteria.minCapacity && option.capacity < criteria.minCapacity) return false;
       if (criteria.maxTime) {
-        const timeInMinutes = option.estimatedTime.includes('minutes') 
-          ? parseInt(option.estimatedTime.split(' ')[0])
-          : 60; // assume 1 hour for 'full day'
+        const timeInMinutes = this.parseTimeToMinutes(option.estimatedTime);
         if (timeInMinutes > criteria.maxTime) return false;
       }
       return true;
@@ -102,30 +192,46 @@ export class TransportationAgent extends TripPlanningAgent {
     score -= (option.estimatedCost / 2);
     
     // Time factor (faster = higher score)
-    const timeInMinutes = option.estimatedTime.includes('minutes') 
-      ? parseInt(option.estimatedTime.split(' ')[0])
-      : 60;
+    const timeInMinutes = this.parseTimeToMinutes(option.estimatedTime);
     score -= (timeInMinutes / 3);
     
     // Availability factor (immediate availability preferred)
     if (option.availability === 'immediate') score += 20;
-    else if (option.availability.includes('5')) score += 15;
-    else if (option.availability.includes('10')) score += 10;
+    else if (option.availability && option.availability.includes('5')) score += 15;
+    else if (option.availability && option.availability.includes('10')) score += 10;
     
-    // Type preferences
+    // Type preferences - prioritize efficient modes
     const typeBonus = {
+      'driving': 15,
+      'transit': 12,
       'rideshare': 15,
       'public': 10,
+      'walking': 5,
+      'bicycling': 8,
       'taxi': 8,
       'rental': 5
     };
     score += (typeBonus[option.type] || 0);
     
     // Features bonus
-    score += (option.features.length * 2);
+    if (option.features && Array.isArray(option.features)) {
+      score += (option.features.length * 2);
+    }
     
     // Capacity consideration
     if (option.capacity >= 4) score += 5;
+    
+    // Real-time data bonus (Google Directions vs mock)
+    if (option.id && !option.id.startsWith('TRANS')) {
+      score += 10; // Bonus for real Google Directions data
+    }
+    
+    // Route efficiency bonus
+    if (option.route && option.route.distance) {
+      // Prefer shorter distances for same time
+      const distanceValue = parseFloat(option.route.distance.replace(/[^\d.]/g, ''));
+      if (distanceValue && distanceValue < 10) score += 5;
+    }
     
     return Math.max(0, score);
   }

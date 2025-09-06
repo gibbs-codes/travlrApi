@@ -6,6 +6,7 @@ import { RestaurantAgent } from './restaurantAgent.js';
 import { TransportationAgent } from './transportationAgent.js';
 import { Trip, Recommendation } from '../models/index.js';
 import databaseService from '../services/database.js';
+import geographicService from '../services/geographicService.js';
 
 export class TripOrchestrator extends BaseAgent {
   constructor(aiConfig = {}, tripId = null) {
@@ -186,5 +187,72 @@ export class TripOrchestrator extends BaseAgent {
       name,
       status: agent.getStatus()
     }));
+  }
+
+  // Enhanced method using GeographicService for itinerary validation
+  async validateTripFeasibility(tripPlan, travelPreferences = {}) {
+    console.log('Validating trip feasibility using GeographicService...');
+    
+    const itineraryFlags = geographicService.flagUnrealisticItineraries(
+      tripPlan.itinerary || [],
+      {
+        travelStyle: travelPreferences.style || 'moderate',
+        transportMode: travelPreferences.transport || 'mixed',
+        dailyHours: travelPreferences.dailyHours || 8
+      }
+    );
+
+    // Validate each day individually
+    const dayValidations = [];
+    for (const day of tripPlan.itinerary || []) {
+      const dayLocations = [...(day.activities || []), ...(day.restaurants || [])];
+      
+      if (dayLocations.length > 0) {
+        const validation = geographicService.validateLocationFeasibility(dayLocations, {
+          travelStyle: travelPreferences.style || 'moderate',
+          transportMode: travelPreferences.transport || 'mixed',
+          availableTime: travelPreferences.dailyHours || 8
+        });
+        
+        dayValidations.push({
+          day: day.day,
+          date: day.date,
+          ...validation
+        });
+      }
+    }
+
+    return {
+      overallFeasible: !itineraryFlags.hasIssues,
+      flags: itineraryFlags.flags,
+      severity: itineraryFlags.overallSeverity,
+      summary: itineraryFlags.summary,
+      dailyValidations: dayValidations,
+      recommendations: this.generateFeasibilityRecommendations(itineraryFlags, dayValidations)
+    };
+  }
+
+  generateFeasibilityRecommendations(itineraryFlags, dayValidations) {
+    const recommendations = [];
+    
+    if (itineraryFlags.hasIssues) {
+      const routingIssues = itineraryFlags.flags.filter(f => f.type === 'routing');
+      const feasibilityIssues = itineraryFlags.flags.filter(f => f.type === 'feasibility');
+      
+      if (routingIssues.length > 0) {
+        recommendations.push('Consider reordering activities by geographic location to reduce travel time');
+      }
+      
+      if (feasibilityIssues.length > 0) {
+        recommendations.push('Reduce the number of daily activities or choose closer alternatives');
+      }
+    }
+    
+    const averageScore = dayValidations.reduce((sum, day) => sum + day.score, 0) / dayValidations.length;
+    if (averageScore < 70) {
+      recommendations.push('Overall itinerary is quite packed - consider a more relaxed pace');
+    }
+    
+    return recommendations;
   }
 }

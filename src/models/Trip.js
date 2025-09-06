@@ -6,7 +6,7 @@ const tripSchema = new mongoose.Schema({
     required: true,
     unique: true,
     index: true,
-    default: () => `trip_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    default: () => `trip_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
   },
   title: {
     type: String,

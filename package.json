@@ -6,7 +6,12 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node test-api-mvp.js",
+    "test:deployment": "node scripts/deployment-validation.js",
+    "validate": "npm run test:deployment",
+    "docker:build": "docker build -t travlrapi .",
+    "docker:dev": "docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build",
+    "docker:prod": "docker-compose up --build -d"
   },
   "repository": {
     "type": "git",
@@ -31,12 +36,17 @@
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "express-validator": "^7.0.1",
     "helmet": "^7.0.0",
     "mongoose": "^8.0.3",
+    "morgan": "^1.10.0",
     "node-fetch": "^3.3.2",
     "ollama": "^0.5.0",
     "openai": "^4.104.0",
-    "rapidapi-connect": "^0.0.6"
+    "prom-client": "^15.1.0",
+    "rapidapi-connect": "^0.0.6",
+    "winston": "^3.11.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

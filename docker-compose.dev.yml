@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # Development API with hot reload
+  api:
+    build: 
+      context: .
+      dockerfile: Dockerfile.dev
+    environment:
+      NODE_ENV: development
+      MONGODB_URI: mongodb://mongodb:27017/travlrapi_dev
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npm run dev
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Development MongoDB (no auth for simplicity)
+  mongodb:
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ""
+      MONGO_INITDB_ROOT_PASSWORD: ""
+      MONGO_INITDB_DATABASE: travlrapi_dev
+    ports:
+      - "27017:27017"
+
+  # Remove nginx in development
+  nginx:
+    profiles:
+      - production
+
+# Development-specific volumes
+volumes:
+  node_modules:

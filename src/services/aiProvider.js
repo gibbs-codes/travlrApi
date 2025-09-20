@@ -60,7 +60,10 @@ class OpenAIProvider extends BaseAIProvider {
   }
 
   async generateStructuredCompletion(prompt, schema, options = {}) {
-    const structuredPrompt = `${prompt}\n\nPlease respond in the following JSON format:\n${JSON.stringify(schema, null, 2)}`;
+    const structuredPrompt = `${prompt}
+
+Please respond in the following JSON format:
+${JSON.stringify(schema, null, 2)}`;
     
     const response = await this.generateCompletion(structuredPrompt, {
       ...options,
@@ -110,7 +113,12 @@ class OllamaProvider extends BaseAIProvider {
   }
 
   async generateStructuredCompletion(prompt, schema, options = {}) {
-    const structuredPrompt = `${prompt}\n\nPlease respond in the following JSON format:\n${JSON.stringify(schema, null, 2)}\n\nOnly return valid JSON, no additional text.`;
+    const structuredPrompt = `${prompt}
+
+Please respond in the following JSON format:
+${JSON.stringify(schema, null, 2)}
+
+Only return valid JSON, no additional text.`;
     
     const response = await this.generateCompletion(structuredPrompt, options);
 

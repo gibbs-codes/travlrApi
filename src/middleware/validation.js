@@ -287,3 +287,68 @@ export const asyncHandler = (fn) => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };
 };
+
+// === SHARING VALIDATION ===
+
+// Validate share token parameter
+export const validateShareToken = (req, res, next) => {
+  const { shareToken } = req.params;
+  const errors = [];
+
+  if (!shareToken) {
+    errors.push('Share token is required');
+  } else if (typeof shareToken !== 'string') {
+    errors.push('Share token must be a string');
+  } else if (shareToken.length < 10) {
+    errors.push('Invalid share token format');
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({
+      success: false,
+      error: 'Validation failed',
+      details: errors,
+      message: 'Please check your input and try again'
+    });
+  }
+
+  next();
+};
+
+// Validate collaborator data
+export const validateCollaborator = (req, res, next) => {
+  const { email, role, userId } = req.body;
+  const errors = [];
+
+  // Basic user identification required for MVP
+  if (!userId) {
+    errors.push('userId is required for authorization');
+  }
+
+  if (!email) {
+    errors.push('Collaborator email is required');
+  } else if (typeof email !== 'string') {
+    errors.push('Email must be a string');
+  } else {
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      errors.push('Invalid email format');
+    }
+  }
+
+  if (role && !['viewer', 'editor', 'owner'].includes(role)) {
+    errors.push('Role must be one of: viewer, editor, owner');
+  }
+
+  if (errors.length > 0) {
+    return res.status(400).json({
+      success: false,
+      error: 'Validation failed',
+      details: errors,
+      message: 'Please check your input and try again'
+    });
+  }
+
+  next();
+};

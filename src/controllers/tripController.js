@@ -3,6 +3,26 @@ import { Trip, Recommendation } from '../models/index.js';
 import databaseService from '../services/database.js';
 import { formatSuccess } from '../middleware/validation.js';
 
+// Helper function to execute orchestrator asynchronously
+async function executeOrchestratorAsync(tripId, tripRequest) {
+  try {
+    console.log(`🚀 Starting orchestrator execution for trip ${tripId}`);
+    
+    // Create orchestrator instance
+    const orchestrator = new TripOrchestrator({}, tripId);
+    
+    // Execute the orchestrator
+    const result = await orchestrator.execute(tripRequest, tripId);
+    
+    console.log(`✅ Orchestrator execution completed for trip ${tripId}`, result);
+    return result;
+    
+  } catch (error) {
+    console.error(`❌ Orchestrator execution failed for trip ${tripId}:`, error);
+    throw error;
+  }
+}
+
 
 export const getTripById = async (req, res) => {
   try {
@@ -217,11 +237,13 @@ export const createTrip = async (req, res) => {
         : 'Trip draft created successfully'
     ));
 
-    // Execute orchestrator asynchronously if requested
+    // Execute orchestrator asynchronously if requested (don't await to avoid blocking response)
     if (triggerOrchestrator) {
       executeOrchestratorAsync(trip._id, {
         destination, origin, departureDate, returnDate,
         travelers: travelerInfo.count, budget, preferences, interests
+      }).catch(error => {
+        console.error(`Background orchestrator execution failed for trip ${trip._id}:`, error);
       });
     }
 
@@ -444,7 +466,9 @@ export const rerunAgents = async (req, res) => {
       interests: trip.preferences.interests
     };
 
-    executeOrchestratorAsync(trip._id, tripRequest);
+    executeOrchestratorAsync(trip._id, tripRequest).catch(error => {
+      console.error(`Background orchestrator rerun failed for trip ${trip._id}:`, error);
+    });
 
   } catch (error) {
     console.error('Agent rerun error:', error);

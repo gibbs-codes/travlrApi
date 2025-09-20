@@ -529,6 +529,30 @@ const tripSchema = new mongoose.Schema({
       type: String,
       unique: true,
       sparse: true
+    },
+    sharing: {
+      isEnabled: {
+        type: Boolean,
+        default: false
+      },
+      shareableLink: {
+        type: String,
+        unique: true,
+        sparse: true
+      },
+      linkExpiration: {
+        type: Date
+      },
+      createdAt: {
+        type: Date
+      },
+      accessCount: {
+        type: Number,
+        default: 0
+      },
+      lastAccessedAt: {
+        type: Date
+      }
     }
   },
   status: {
@@ -576,6 +600,12 @@ tripSchema.virtual('estimatedBudget').get(function() {
   return Object.values(breakdown).reduce((sum, amount) => sum + (amount || 0), 0);
 });
 
+tripSchema.virtual('isShareLinkActive').get(function() {
+  if (!this.sharing.isEnabled || !this.sharing.shareableLink) return false;
+  if (!this.sharing.linkExpiration) return true; // No expiration set
+  return new Date() < this.sharing.linkExpiration;
+});
+
 tripSchema.pre('save', function(next) {
   if (this.dates.departureDate && this.dates.returnDate) {
     const diffTime = Math.abs(this.dates.returnDate - this.dates.departureDate);
@@ -594,5 +624,7 @@ tripSchema.index({ 'destination.name': 1 });
 tripSchema.index({ status: 1, updatedAt: -1 });
 tripSchema.index({ 'collaboration.collaborators.userId': 1 });
 tripSchema.index({ tags: 1 });
+tripSchema.index({ 'sharing.shareableLink': 1 });
+tripSchema.index({ 'sharing.isEnabled': 1, 'sharing.linkExpiration': 1 });
 
 export default mongoose.model('Trip', tripSchema);

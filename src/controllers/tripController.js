@@ -114,8 +114,13 @@ export const createTrip = async (req, res) => {
       preferences = {},
       interests = ['cultural', 'food'],
       createdBy = 'anonymous',
+      collaboration,
       triggerOrchestrator = true
     } = req.body;
+
+    // Handle collaboration data - support both direct createdBy and collaboration object
+    const collaborationData = collaboration || {};
+    const tripCreatedBy = collaborationData.createdBy || createdBy;
 
     // Ensure database connection
     await databaseService.connect();
@@ -170,8 +175,8 @@ export const createTrip = async (req, res) => {
         accessibility: preferences.accessibility || {}
       },
       collaboration: {
-        createdBy,
-        collaborators: [],
+        createdBy: tripCreatedBy,
+        collaborators: collaborationData.collaborators || [],
         isPublic: preferences.isPublic || false
       },
       status: triggerOrchestrator ? 'planning' : 'draft',

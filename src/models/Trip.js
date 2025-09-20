@@ -589,9 +589,7 @@ tripSchema.pre('save', function(next) {
   next();
 });
 
-tripSchema.index({ tripId: 1 }, { unique: true });
 tripSchema.index({ 'collaboration.createdBy': 1, status: 1 });
-tripSchema.index({ 'dates.departureDate': 1 });
 tripSchema.index({ 'destination.name': 1 });
 tripSchema.index({ status: 1, updatedAt: -1 });
 tripSchema.index({ 'collaboration.collaborators.userId': 1 });

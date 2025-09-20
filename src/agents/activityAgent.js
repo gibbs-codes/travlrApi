@@ -317,7 +317,7 @@ Focus on quality over quantity. Make recommendations that would genuinely enhanc
    *    "
    */
   async testOpenAIIntegration() {
-    console.log('🧪 Testing ActivityAgent OpenAI Integration...\n');
+    console.log('🧪 Testing ActivityAgent OpenAI Integration...');
 
     try {
       // Test data matching expected criteria structure
@@ -332,17 +332,20 @@ Focus on quality over quantity. Make recommendations that would genuinely enhanc
 
       console.log('📋 Test Criteria:');
       console.log(JSON.stringify(sampleCriteria, null, 2));
-      console.log('\n⏳ Executing ActivityAgent...');
+      console.log('⏳ Executing ActivityAgent...');
 
       const startTime = Date.now();
       const result = await this.execute({ criteria: sampleCriteria });
       const executionTime = Date.now() - startTime;
 
-      console.log(`\n⚡ Execution completed in ${executionTime}ms`);
+      console.log(`
+⚡ Execution completed in ${executionTime}ms`);
 
       if (result.success) {
-        console.log('\n✅ SUCCESS - ActivityAgent integration working!');
-        console.log('\n📊 Response Structure Validation:');
+        console.log('
+✅ SUCCESS - ActivityAgent integration working!');
+        console.log('
+📊 Response Structure Validation:');
         
         // Validate expected structure
         const data = result.data;
@@ -356,7 +359,8 @@ Focus on quality over quantity. Make recommendations that would genuinely enhanc
 
         if (content.recommendations && content.recommendations.length > 0) {
           const sample = content.recommendations[0];
-          console.log('\n🎯 Sample Activity Structure:');
+          console.log('
+🎯 Sample Activity Structure:');
           console.log(`✓ Has id: ${!!sample.id}`);
           console.log(`✓ Has name: ${!!sample.name}`);
           console.log(`✓ Has description: ${!!sample.description}`);
@@ -367,7 +371,8 @@ Focus on quality over quantity. Make recommendations that would genuinely enhanc
           console.log(`✓ Has location: ${!!sample.location}`);
           console.log(`✓ Has bookingRequired: ${!!(sample.bookingRequired !== undefined)}`);
 
-          console.log('\n📋 Sample Activity:');
+          console.log('
+📋 Sample Activity:');
           console.log(`Name: ${sample.name}`);
           console.log(`Category: ${sample.category}`);
           console.log(`Price: $${sample.price}`);
@@ -376,11 +381,13 @@ Focus on quality over quantity. Make recommendations that would genuinely enhanc
           console.log(`Booking Required: ${sample.bookingRequired ? 'Yes' : 'No'}`);
         }
 
-        console.log(`\n🎯 Confidence: ${data.confidence || content.confidence}${typeof (data.confidence || content.confidence) === 'number' ? '' : ' (Note: Should be numeric 0-100)'}`);
+        console.log(`
+🎯 Confidence: ${data.confidence || content.confidence}${typeof (data.confidence || content.confidence) === 'number' ? '' : ' (Note: Should be numeric 0-100)'}`);
         console.log(`📝 Reasoning: ${(data.reasoning || content.reasoning || '').substring(0, 100)}${(data.reasoning || content.reasoning || '').length > 100 ? '...' : ''}`);
         
         if (data.metadata) {
-          console.log('\n📋 Metadata:');
+          console.log('
+📋 Metadata:');
           console.log(`Source: ${data.metadata.source}`);
           console.log(`Timestamp: ${data.metadata.timestamp}`);
           console.log(`Total Results: ${data.metadata.totalResults}`);
@@ -388,30 +395,37 @@ Focus on quality over quantity. Make recommendations that would genuinely enhanc
         }
 
       } else {
-        console.log('\n❌ FAILED - ActivityAgent returned error:');
+        console.log('
+❌ FAILED - ActivityAgent returned error:');
         console.log(`Error: ${result.error}`);
-        console.log('\n🔧 Troubleshooting suggestions:');
+        console.log('
+🔧 Troubleshooting suggestions:');
         console.log('- Check OpenAI API key is set in environment variables');
         console.log('- Verify network connectivity');
         console.log('- Check OpenAI API quota/billing status');
         console.log('- Review agent configuration');
       }
 
-      console.log('\n📊 Full Result Object:');
+      console.log('
+📊 Full Result Object:');
       console.log(JSON.stringify(result, null, 2));
 
     } catch (error) {
-      console.log('\n💥 EXCEPTION - Test failed with error:');
+      console.log('
+💥 EXCEPTION - Test failed with error:');
       console.log(`Error: ${error.message}`);
       console.log(`Stack: ${error.stack}`);
       
-      console.log('\n🔧 Common Issues:');
+      console.log('
+🔧 Common Issues:');
       console.log('- Missing environment variables (OPENAI_API_KEY)');
       console.log('- Network connectivity problems');
       console.log('- Invalid agent configuration');
       console.log('- OpenAI service unavailable');
     }
 
-    console.log('\n🏁 Test completed.\n');
+    console.log('
+🏁 Test completed.
+');
   }
 }

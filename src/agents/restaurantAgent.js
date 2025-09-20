@@ -242,7 +242,7 @@ export class RestaurantAgent extends TripPlanningAgent {
    * Test function to validate Google Places integration
    */
   async testGooglePlacesIntegration() {
-    console.log('🧪 Testing RestaurantAgent Google Places Integration...\n');
+    console.log('🧪 Testing RestaurantAgent Google Places Integration...');
 
     try {
       const sampleCriteria = {
@@ -255,22 +255,26 @@ export class RestaurantAgent extends TripPlanningAgent {
 
       console.log('📋 Test Criteria:');
       console.log(JSON.stringify(sampleCriteria, null, 2));
-      console.log('\n⏳ Executing RestaurantAgent...');
+      console.log('
+⏳ Executing RestaurantAgent...');
 
       const startTime = Date.now();
       const result = await this.execute({ criteria: sampleCriteria });
       const executionTime = Date.now() - startTime;
 
-      console.log(`\n⚡ Execution completed in ${executionTime}ms`);
+      console.log(`
+⚡ Execution completed in ${executionTime}ms`);
 
       if (result.success) {
-        console.log('\n✅ SUCCESS - Google Places integration working!');
+        console.log('
+✅ SUCCESS - Google Places integration working!');
         
         const restaurants = result.data.content?.recommendations || result.data.recommendations;
         console.log(`📊 Found ${restaurants?.length || 0} restaurant recommendations`);
 
         if (restaurants && restaurants.length > 0) {
-          console.log('\n🍽️ Sample Restaurant:');
+          console.log('
+🍽️ Sample Restaurant:');
           const sample = restaurants[0];
           console.log(`Name: ${sample.name}`);
           console.log(`Cuisine: ${sample.cuisine}`);
@@ -280,17 +284,22 @@ export class RestaurantAgent extends TripPlanningAgent {
           console.log(`Features: ${sample.features?.join(', ') || 'None'}`);
         }
 
-        console.log('\n📊 Full Result Structure:');
+        console.log('
+📊 Full Result Structure:');
         console.log(JSON.stringify(result, null, 2));
 
       } else {
-        console.log('\n❌ FAILED:', result.error);
+        console.log('
+❌ FAILED:', result.error);
       }
 
     } catch (error) {
-      console.log('\n💥 Test failed with error:', error.message);
+      console.log('
+💥 Test failed with error:', error.message);
     }
 
-    console.log('\n🏁 Test completed.\n');
+    console.log('
+🏁 Test completed.
+');
   }
 }

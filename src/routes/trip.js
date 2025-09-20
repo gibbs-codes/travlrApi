@@ -1,4 +1,47 @@
-/**\n * Enhanced Trip Management API Routes\n * \n * Provides comprehensive trip creation, management, and agent coordination\n * for the TravlrAPI with real-time status updates and structured validation.\n * \n * ENDPOINTS:\n * \n * === TRIP CREATION & MANAGEMENT ===\n * POST   /api/trip/create           - Create trip with orchestrator trigger\n * GET    /api/trip/:tripId          - Get full trip with recommendations  \n * PUT    /api/trip/:tripId/select   - Update user recommendation selections\n * GET    /api/trip/:tripId/status   - Real-time execution status\n * \n * === AGENT MANAGEMENT ===\n * POST   /api/trip/:tripId/rerun    - Selective agent re-execution\n * GET    /api/trip/:tripId/agents   - Detailed agent execution metrics\n * \n * === USER MANAGEMENT ===\n * GET    /api/trip/user             - User's trips with pagination\n * \n * === LEGACY ENDPOINTS ===\n * POST   /api/trip/plan             - Legacy trip planning\n * PATCH  /api/trip/:tripId/selections - Legacy selection update\n * POST   /api/trip/:tripId/retrigger  - Legacy agent retrigger\n * GET    /api/trip/agents/status    - Global agent status\n * \n * FEATURES:\n * - Structured input validation with detailed error messages\n * - Async orchestrator execution with real-time status tracking\n * - Comprehensive error handling and response formatting\n * - Selection validation and persistence\n * - Agent failure recovery and selective re-runs\n * - Geographic service integration for location intelligence\n * - Database persistence with MongoDB models\n * \n * REQUEST/RESPONSE FORMATS:\n * - All endpoints return consistent { success, data, message } format\n * - Validation errors include detailed field-level feedback\n * - Status endpoints provide real-time execution progress\n * - Agent endpoints include confidence scoring and timing metrics\n */\n\nimport express from 'express';
+/**
+ * Enhanced Trip Management API Routes
+ * 
+ * Provides comprehensive trip creation, management, and agent coordination
+ * for the TravlrAPI with real-time status updates and structured validation.
+ * 
+ * ENDPOINTS:
+ * 
+ * === TRIP CREATION & MANAGEMENT ===
+ * POST   /api/trip/create           - Create trip with orchestrator trigger
+ * GET    /api/trip/:tripId          - Get full trip with recommendations  
+ * PUT    /api/trip/:tripId/select   - Update user recommendation selections
+ * GET    /api/trip/:tripId/status   - Real-time execution status
+ * 
+ * === AGENT MANAGEMENT ===
+ * POST   /api/trip/:tripId/rerun    - Selective agent re-execution
+ * GET    /api/trip/:tripId/agents   - Detailed agent execution metrics
+ * 
+ * === USER MANAGEMENT ===
+ * GET    /api/trip/user             - User's trips with pagination
+ * 
+ * === LEGACY ENDPOINTS ===
+ * POST   /api/trip/plan             - Legacy trip planning
+ * PATCH  /api/trip/:tripId/selections - Legacy selection update
+ * POST   /api/trip/:tripId/retrigger  - Legacy agent retrigger
+ * GET    /api/trip/agents/status    - Global agent status
+ * 
+ * FEATURES:
+ * - Structured input validation with detailed error messages
+ * - Async orchestrator execution with real-time status tracking
+ * - Comprehensive error handling and response formatting
+ * - Selection validation and persistence
+ * - Agent failure recovery and selective re-runs
+ * - Geographic service integration for location intelligence
+ * - Database persistence with MongoDB models
+ * 
+ * REQUEST/RESPONSE FORMATS:
+ * - All endpoints return consistent { success, data, message } format
+ * - Validation errors include detailed field-level feedback
+ * - Status endpoints provide real-time execution progress
+ * - Agent endpoints include confidence scoring and timing metrics
+ */
+
+import express from 'express';
 import { 
   // Legacy endpoints
   planTrip, 

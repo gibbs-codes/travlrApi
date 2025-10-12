@@ -1,5 +1,34 @@
 import mongoose from 'mongoose';
 
+const sharingSchema = new mongoose.Schema({
+  isEnabled: {
+    type: Boolean,
+    default: false
+  },
+  shareableLink: {
+    type: String,
+    default: null,
+    unique: true,
+    sparse: true
+  },
+  linkExpiration: {
+    type: Date,
+    default: null
+  },
+  createdAt: {
+    type: Date,
+    default: null
+  },
+  accessCount: {
+    type: Number,
+    default: 0
+  },
+  lastAccessedAt: {
+    type: Date,
+    default: null
+  }
+}, { _id: false, id: false });
+
 const tripSchema = new mongoose.Schema({
   tripId: {
     type: String,
@@ -529,31 +558,18 @@ const tripSchema = new mongoose.Schema({
       type: String,
       unique: true,
       sparse: true
-    },
-    sharing: {
-      isEnabled: {
-        type: Boolean,
-        default: false
-      },
-      shareableLink: {
-        type: String,
-        unique: true,
-        sparse: true
-      },
-      linkExpiration: {
-        type: Date
-      },
-      createdAt: {
-        type: Date
-      },
-      accessCount: {
-        type: Number,
-        default: 0
-      },
-      lastAccessedAt: {
-        type: Date
-      }
     }
+  },
+  sharing: {
+    type: sharingSchema,
+    default: () => ({
+      isEnabled: false,
+      shareableLink: null,
+      linkExpiration: null,
+      createdAt: null,
+      accessCount: 0,
+      lastAccessedAt: null
+    })
   },
   status: {
     type: String,
@@ -581,11 +597,13 @@ const tripSchema = new mongoose.Schema({
 });
 
 tripSchema.virtual('totalSelectedRecommendations').get(function() {
-  return Object.values(this.selectedRecommendations).reduce((total, category) => total + category.length, 0);
+  const selections = this.selectedRecommendations || {};
+  return Object.values(selections).reduce((total, category = []) => total + (category?.length || 0), 0);
 });
 
 tripSchema.virtual('totalRecommendations').get(function() {
-  return Object.values(this.recommendations).reduce((total, category) => total + category.length, 0);
+  const stored = this.recommendations || {};
+  return Object.values(stored).reduce((total, category = []) => total + (category?.length || 0), 0);
 });
 
 tripSchema.virtual('durationDays').get(function() {
@@ -595,15 +613,16 @@ tripSchema.virtual('durationDays').get(function() {
 });
 
 tripSchema.virtual('estimatedBudget').get(function() {
-  const breakdown = this.preferences.budget?.breakdown;
+  const breakdown = this.preferences?.budget?.breakdown;
   if (!breakdown) return 0;
   return Object.values(breakdown).reduce((sum, amount) => sum + (amount || 0), 0);
 });
 
 tripSchema.virtual('isShareLinkActive').get(function() {
-  if (!this.sharing.isEnabled || !this.sharing.shareableLink) return false;
-  if (!this.sharing.linkExpiration) return true; // No expiration set
-  return new Date() < this.sharing.linkExpiration;
+  const sharing = this.sharing || this.collaboration?.sharing;
+  if (!sharing?.isEnabled || !sharing.shareableLink) return false;
+  if (!sharing.linkExpiration) return true; // No expiration set
+  return new Date() < sharing.linkExpiration;
 });
 
 tripSchema.pre('save', function(next) {
@@ -624,7 +643,7 @@ tripSchema.index({ 'destination.name': 1 });
 tripSchema.index({ status: 1, updatedAt: -1 });
 tripSchema.index({ 'collaboration.collaborators.userId': 1 });
 tripSchema.index({ tags: 1 });
-tripSchema.index({ 'sharing.shareableLink': 1 });
+tripSchema.index({ 'sharing.shareableLink': 1 }, { sparse: true });
 tripSchema.index({ 'sharing.isEnabled': 1, 'sharing.linkExpiration': 1 });
 
 export default mongoose.model('Trip', tripSchema);

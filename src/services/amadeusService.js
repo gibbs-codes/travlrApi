@@ -178,6 +178,7 @@ class AmadeusService {
       return {
         id: offer.id,
         airline: firstSegment.carrierCode,
+        flightNumber: firstSegment.number,
         departure: {
           airport: firstSegment.departure.iataCode,
           time: new Date(firstSegment.departure.at).toLocaleTimeString('en-US', { 

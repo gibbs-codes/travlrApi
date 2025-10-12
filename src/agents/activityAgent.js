@@ -127,7 +127,22 @@ export class ActivityAgent extends TripPlanningAgent {
       }
       
       if (recommendations && Array.isArray(recommendations) && recommendations.length > 0) {
-        return recommendations;
+        // Sanitize price data - convert "N/A" or invalid strings to null
+        const sanitized = recommendations.map(activity => {
+          const sanitizedActivity = { ...activity };
+
+          // Handle price field
+          if (activity.price === 'N/A' || activity.price === 'n/a' || typeof activity.price === 'string') {
+            sanitizedActivity.price = null;
+            console.log(`⚠️ Sanitized price for ${activity.name}: "${activity.price}" → null`);
+          } else if (activity.price === undefined || activity.price === null) {
+            sanitizedActivity.price = null;
+          }
+
+          return sanitizedActivity;
+        });
+
+        return sanitized;
       } else {
         throw new Error(`Invalid AI response format. Expected array of recommendations, got: ${typeof response}`);
       }

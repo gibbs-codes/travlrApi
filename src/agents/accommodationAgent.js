@@ -73,9 +73,22 @@ export class AccommodationAgent extends TripPlanningAgent {
         return false;
       }
 
-      // Rating filter - use lenient default
-      if (accommodation.rating < effectiveMinRating) {
-        console.log(`❌ ${accommodation.name}: Rating too low (${accommodation.rating} < ${effectiveMinRating})`);
+      // Rating filter - handle rating scale conversion
+      let convertedRating = accommodation.rating;
+      const originalRating = accommodation.rating;
+
+      // Handle null/undefined ratings gracefully
+      if (convertedRating == null || convertedRating === undefined) {
+        convertedRating = 0;
+      } else if (convertedRating > 0 && convertedRating <= 1) {
+        // RapidAPI returns 0-1 scale (e.g., 0.85 = 8.5/10)
+        // Convert to 0-10 scale, then to 0-5 scale
+        convertedRating = (convertedRating * 10) / 2;
+        console.log(`🔄 ${accommodation.name}: Converted rating from ${originalRating} to ${convertedRating.toFixed(2)}/5`);
+      }
+
+      if (convertedRating < effectiveMinRating) {
+        console.log(`❌ ${accommodation.name}: Rating too low (original: ${originalRating}, converted: ${convertedRating.toFixed(2)}/5 < ${effectiveMinRating})`);
         return false;
       }
 

@@ -228,22 +228,37 @@ export class TripOrchestrator extends BaseAgent {
 
   async storeRecommendations(agentName, recommendations) {
     if (!this.tripId || !recommendations || recommendations.length === 0) return [];
-    
-    try {
-      const recommendationIds = [];
-      
-      for (const rec of recommendations) {
+
+    const recommendationIds = [];
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const rec of recommendations) {
+      try {
+        // Sanitize price data - convert "N/A" or invalid strings to null/0
+        let priceAmount = rec.price || rec.cost || 0;
+        if (priceAmount === 'N/A' || priceAmount === 'n/a' || typeof priceAmount === 'string') {
+          console.warn(`⚠️ Invalid price for ${rec.name || 'Unknown'}: "${priceAmount}" → converting to 0`);
+          priceAmount = 0;
+        }
+
+        // Sanitize rating data
+        let ratingScore = rec.rating || rec.score || 0;
+        if (typeof ratingScore === 'string') {
+          ratingScore = parseFloat(ratingScore) || 0;
+        }
+
         const recommendation = await Recommendation.create({
           agentType: agentName,
           name: rec.name || rec.title || 'Unknown',
           description: rec.description || rec.summary || '',
           price: {
-            amount: rec.price || rec.cost || 0,
+            amount: priceAmount,
             currency: 'USD',
             priceType: this.getPriceType(agentName)
           },
           rating: {
-            score: rec.rating || rec.score || 0,
+            score: ratingScore,
             reviewCount: rec.reviewCount || 0,
             source: rec.source || agentName
           },
@@ -262,21 +277,37 @@ export class TripOrchestrator extends BaseAgent {
           },
           images: rec.images || []
         });
-        
+
         recommendationIds.push(recommendation._id);
+        successCount++;
+      } catch (error) {
+        failCount++;
+        console.error(`❌ Failed to store ${agentName} recommendation "${rec.name || 'Unknown'}":`, error.message);
+        console.error(`   Validation error details:`, error.errors || error);
+        console.error(`   Problematic data:`, JSON.stringify({
+          name: rec.name,
+          price: rec.price,
+          rating: rec.rating,
+          type: typeof rec.price
+        }, null, 2));
       }
-      
-      // Update trip with new recommendations
-      await Trip.findByIdAndUpdate(this.tripId, {
-        [`recommendations.${agentName}`]: recommendationIds,
-        [`agentExecution.agents.${agentName}.recommendationCount`]: recommendationIds.length
-      });
-      
-      return recommendationIds;
-    } catch (error) {
-      console.error(`Failed to store ${agentName} recommendations:`, error);
-      return [];
     }
+
+    console.log(`📊 ${agentName} storage results: ${successCount} saved, ${failCount} failed`);
+
+    // Update trip with successfully stored recommendations
+    if (recommendationIds.length > 0) {
+      try {
+        await Trip.findByIdAndUpdate(this.tripId, {
+          [`recommendations.${agentName}`]: recommendationIds,
+          [`agentExecution.agents.${agentName}.recommendationCount`]: recommendationIds.length
+        });
+      } catch (error) {
+        console.error(`Failed to update trip with ${agentName} recommendations:`, error);
+      }
+    }
+
+    return recommendationIds;
   }
 
   getPriceType(agentName) {

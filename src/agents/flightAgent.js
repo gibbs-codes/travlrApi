@@ -37,6 +37,22 @@ export class FlightAgent extends TripPlanningAgent {
       const flights = await amadeusService.searchFlights(searchParams);
       console.log(`Found ${flights.length} flights from Amadeus`);
 
+      // Handle empty results
+      if (flights.length === 0) {
+        console.log('ℹ️ No flights returned from Amadeus. Possible reasons:');
+        console.log('  - Dates may be too far in the future (Amadeus typically supports up to 11 months)');
+        console.log('  - No availability for the specified route and dates');
+        console.log('  - Route may not be served by any airlines in Amadeus database');
+
+        // Fallback to mock data in development
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`⚠️ No flights found from Amadeus for ${criteria.origin} to ${criteria.destination} on ${criteria.departureDate}. Using mock data.`);
+          return this.getMockFlights(criteria);
+        }
+
+        return flights; // Return empty array in production
+      }
+
       // Apply client-side filtering based on criteria
       return this.applyFilters(flights, criteria);
       

@@ -6,6 +6,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import travelRoutes from './routes/travel.js';
 import tripRoutes from './routes/trip.js';
+import sharingRoutes from './routes/sharing.js';
 import databaseService from './services/database.js';
 
 const app = express();
@@ -37,6 +38,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use('/api/travel', travelRoutes);
 app.use('/api/trip', tripRoutes);
+app.use('/api', sharingRoutes);
 
 app.get('/health', (_req, res) => {
   const dbStatus = databaseService.getConnectionStatus();

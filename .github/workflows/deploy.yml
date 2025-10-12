@@ -1,0 +1,136 @@
+name: Deploy TV Dashboard API to Mac Mini
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  APP_NAME: tvdashapi
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Configure Docker environment
+      run: |
+        echo "Setting up Docker environment for ${{ github.repository }}..."
+        
+        # Create Docker config directory
+        mkdir -p ~/.docker
+        
+        # Create config without keychain
+        cat > ~/.docker/config.json << 'EOF'
+        {
+          "auths": {},
+          "credsStore": "",
+          "credHelpers": {},
+          "experimental": "disabled"
+        }
+        EOF
+        
+        # Ensure shared network exists
+        docker network create gibbs-apps 2>/dev/null || echo "Network already exists"
+        
+        # Test Docker access
+        echo "Testing Docker access..."
+        docker --version
+        
+    - name: Set up deployment directory
+      run: |
+        DEPLOY_DIR=~/deployments/${{ env.APP_NAME }}
+        echo "Cleaning up old deployment..."
+        
+        # Stop any existing container
+        docker stop tvdashapi 2>/dev/null || true
+        docker rm tvdashapi 2>/dev/null || true
+        
+        # Clean up directory
+        rm -rf $DEPLOY_DIR
+        mkdir -p $DEPLOY_DIR
+        
+        echo "Copying new code..."
+        cp -r $GITHUB_WORKSPACE/* $DEPLOY_DIR/
+        
+    - name: Copy secrets
+      run: |
+        DEPLOY_DIR=~/deployments/${{ env.APP_NAME }}
+        APP_SECRETS=~/secrets/${{ env.APP_NAME }}
+        
+        echo "Copying environment file..."
+        if [ -f "$APP_SECRETS/production.env" ]; then
+          cp $APP_SECRETS/production.env $DEPLOY_DIR/.env
+          echo "✅ Environment file copied as .env"
+        else
+          echo "❌ Environment file not found at $APP_SECRETS/production.env"
+          exit 1
+        fi
+        
+    - name: Build and start container
+      env:
+        DOCKER_CONFIG: ~/.docker
+        DOCKER_BUILDKIT: 0
+      run: |
+        cd ~/deployments/${{ env.APP_NAME }}
+        echo "Building TV Dashboard API..."
+        
+        # Stop any existing container
+        docker stop tvdashapi 2>/dev/null || true
+        docker rm tvdashapi 2>/dev/null || true
+        
+        # Build the image
+        docker build --no-cache -t tvdashapi:latest .
+        
+        # Run the container with shared network and secrets volume
+        docker run -d \
+          --name tvdashapi \
+          --restart unless-stopped \
+          --network gibbs-apps \
+          -p 3006:3006 \
+          --env-file .env \
+          -e NODE_ENV=production \
+          -e PORT=3006 \
+          -v ~/secrets/tvdashapi:/app/secrets:ro \
+          tvdashapi:latest
+        
+    - name: Verify deployment
+      run: |
+        echo "Waiting for container to start..."
+        sleep 20
+        
+        echo "Checking container status..."
+        docker ps | grep tvdashapi
+        
+        echo "Testing health endpoint..."
+        if curl -f http://localhost:3006/health; then
+          echo "✅ TV Dashboard API deployment successful!"
+        else
+          echo "❌ Health check failed"
+          echo "Container logs:"
+          docker logs tvdashapi
+          exit 1
+        fi
+        
+        echo "Testing API connectivity..."
+        if docker exec tvdashapi curl -f http://ctaaapi-production:3001/health 2>/dev/null; then
+          echo "✅ Can reach CTAAAPI from TV Dashboard!"
+        else
+          echo "⚠️  Cannot reach CTAAAPI (this is expected on first deploy)"
+        fi
+        
+    - name: Clean up old images
+      run: |
+        docker image prune -f --filter label=app=tvdashapi || true
+        
+    - name: Show final status
+      run: |
+        echo "=== Final Status ==="
+        docker ps | grep -E "(tvdashapi|ctaaapi-production)"
+        echo "TV Dashboard API is available at http://localhost:3006"
+        echo "CTAAAPI is available at http://localhost:3001"
+        echo "Network: gibbs-apps"
+        docker network inspect gibbs-apps --format='{{range .Containers}}{{.Name}}: {{.IPv4Address}}{{"\n"}}{{end}}'

@@ -1,7 +1,7 @@
 // test-api.js - Simple test script to validate the API
 import fetch from 'node-fetch';
 
-const API_BASE = 'http://localhost:3000';
+const API_BASE = 'http://localhost:3006';
 
 async function testHealthEndpoint() {
   console.log('🧪 Testing health endpoint...');

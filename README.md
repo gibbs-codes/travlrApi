@@ -20,7 +20,7 @@ A Node.js/Express backend with AI agents for trip planning, designed to work wit
 3. **Start the Server**
    ```bash
    npm start
-   # Server will run on http://localhost:3000
+   # Server will run on http://localhost:3006
    ```
 
 4. **Test the API**
@@ -81,10 +81,10 @@ A Node.js/Express backend with AI agents for trip planning, designed to work wit
 ### Option 3: Direct API Testing
 ```bash
 # Test health endpoint
-curl http://localhost:3000/health
+curl http://localhost:3006/health
 
 # Test trip planning
-curl -X POST http://localhost:3000/api/trip/plan \
+curl -X POST http://localhost:3006/api/trip/plan \
   -H "Content-Type: application/json" \
   -d '{
     "destination": "Paris",
@@ -124,10 +124,10 @@ curl -X POST http://localhost:3000/api/trip/plan \
 
 ### Environment Variables (.env)
 ```env
-PORT=3000
+PORT=3006
 AI_PROVIDER=mock          # Uses mock AI responses
 MONGODB_URI=mongodb://localhost:27017/travlrapi
-CORS_ORIGIN=http://localhost:3001
+CORS_ORIGIN=*
 MOCK_DELAY_MS=500         # Simulated API response delay
 ```
 

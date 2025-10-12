@@ -303,6 +303,9 @@ export class TripOrchestrator extends BaseAgent {
 
   // Enhanced Criteria Extraction
   extractCriteria(tripRequest) {
+    // Budget is optional - only use if provided and greater than 0
+    const hasBudget = tripRequest.budget && tripRequest.budget.total && tripRequest.budget.total > 0;
+
     const baseCriteria = {
       // Core trip details
       tripId: this.tripId,
@@ -311,21 +314,21 @@ export class TripOrchestrator extends BaseAgent {
       departureDate: tripRequest.departureDate,
       returnDate: tripRequest.returnDate,
       travelers: tripRequest.travelers || 1,
-      
-      // Budget information
-      totalBudget: tripRequest.budget?.total || 0,
-      budgetBreakdown: tripRequest.budget || {},
-      
-      // Flight criteria
-      maxPrice: tripRequest.budget?.flight,
+
+      // Budget information (optional - 0 means no budget limit)
+      totalBudget: hasBudget ? tripRequest.budget.total : undefined,
+      budgetBreakdown: hasBudget ? tripRequest.budget : {},
+
+      // Flight criteria (don't set maxPrice if budget is 0 or undefined)
+      maxPrice: (tripRequest.budget?.flight && tripRequest.budget.flight > 0) ? tripRequest.budget.flight : undefined,
       preferNonStop: tripRequest.preferences?.nonStopFlights,
       preferredClass: tripRequest.preferences?.flightClass,
 
-      // Accommodation criteria
+      // Accommodation criteria (don't set maxPrice if budget is 0 or undefined)
       checkInDate: tripRequest.departureDate,
       checkOutDate: tripRequest.returnDate,
       accommodationType: tripRequest.preferences?.accommodationType,
-      minRating: tripRequest.preferences?.minRating || 4.0,
+      minRating: tripRequest.preferences?.minRating, // Let agent set defaults, don't enforce 4.0 here
       requiredAmenities: tripRequest.preferences?.amenities,
 
       // Activity criteria
@@ -338,15 +341,22 @@ export class TripOrchestrator extends BaseAgent {
       priceRange: tripRequest.preferences?.diningBudget || '$$',
       features: tripRequest.preferences?.restaurantFeatures,
 
-      // Transportation criteria
+      // Transportation criteria (don't set maxCost if budget is 0 or undefined)
       transportTypes: tripRequest.preferences?.transportModes || ['rideshare', 'public'],
-      maxCost: tripRequest.budget?.transportation,
+      maxCost: (tripRequest.budget?.transportation && tripRequest.budget.transportation > 0) ? tripRequest.budget.transportation : undefined,
       minCapacity: tripRequest.travelers || 1,
-      
+
       // Context for dependent agents
       executionContext: this.executionContext
     };
-    
+
+    console.log('📊 Extracted criteria - Budget handling:', {
+      hasBudget,
+      totalBudget: baseCriteria.totalBudget,
+      flightMaxPrice: baseCriteria.maxPrice,
+      transportMaxCost: baseCriteria.maxCost
+    });
+
     return baseCriteria;
   }
 

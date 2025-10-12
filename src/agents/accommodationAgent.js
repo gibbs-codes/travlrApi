@@ -53,32 +53,55 @@ export class AccommodationAgent extends TripPlanningAgent {
   }
 
   applyFilters(accommodations, criteria) {
-    return accommodations.filter(accommodation => {
-      // Price filter
-      if (criteria.maxPrice && accommodation.price > criteria.maxPrice) {
+    console.log('🔍 Applying filters with criteria:', {
+      maxPrice: criteria.maxPrice,
+      minRating: criteria.minRating,
+      accommodationType: criteria.accommodationType,
+      requiredAmenities: criteria.requiredAmenities
+    });
+
+    // Use more lenient defaults
+    const effectiveMinRating = criteria.minRating && criteria.minRating > 0 ?
+      Math.min(criteria.minRating, 3.0) : 3.0;
+
+    console.log(`Using minRating: ${effectiveMinRating} (original: ${criteria.minRating})`);
+
+    const filtered = accommodations.filter(accommodation => {
+      // Price filter - only apply if maxPrice exists AND is greater than 0
+      if (criteria.maxPrice && criteria.maxPrice > 0 && accommodation.price > criteria.maxPrice) {
+        console.log(`❌ ${accommodation.name}: Price too high ($${accommodation.price} > $${criteria.maxPrice})`);
         return false;
       }
-      
-      // Rating filter
-      if (criteria.minRating && accommodation.rating < criteria.minRating) {
+
+      // Rating filter - use lenient default
+      if (accommodation.rating < effectiveMinRating) {
+        console.log(`❌ ${accommodation.name}: Rating too low (${accommodation.rating} < ${effectiveMinRating})`);
         return false;
       }
-      
+
       // Accommodation type filter
       if (criteria.accommodationType && accommodation.type !== criteria.accommodationType) {
+        console.log(`❌ ${accommodation.name}: Type mismatch (${accommodation.type} !== ${criteria.accommodationType})`);
         return false;
       }
-      
-      // Required amenities filter
-      if (criteria.requiredAmenities && criteria.requiredAmenities.length > 0) {
+
+      // Required amenities filter - only apply if array exists AND has items
+      if (criteria.requiredAmenities && Array.isArray(criteria.requiredAmenities) && criteria.requiredAmenities.length > 0) {
+        const hotelAmenities = accommodation.amenities || [];
         const hasAllAmenities = criteria.requiredAmenities.every(
-          amenity => accommodation.amenities.includes(amenity.toLowerCase())
+          amenity => hotelAmenities.includes(amenity.toLowerCase())
         );
-        if (!hasAllAmenities) return false;
+        if (!hasAllAmenities) {
+          console.log(`❌ ${accommodation.name}: Missing required amenities`);
+          return false;
+        }
       }
-      
+
       return true;
     });
+
+    console.log(`✅ Filter results: ${filtered.length}/${accommodations.length} hotels passed filters`);
+    return filtered;
   }
 
   async rank(results) {

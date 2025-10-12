@@ -64,9 +64,62 @@ class AmadeusService {
     }
   }
 
+  async getCityAirportCode(cityName) {
+    // Fallback mapping for common cities
+    const cityToAirportMap = {
+      'new york': 'JFK',
+      'chicago': 'ORD',
+      'los angeles': 'LAX',
+      'san francisco': 'SFO',
+      'miami': 'MIA',
+      'boston': 'BOS',
+      'seattle': 'SEA',
+      'denver': 'DEN',
+      'atlanta': 'ATL',
+      'dallas': 'DFW',
+      'houston': 'IAH',
+      'philadelphia': 'PHL',
+      'phoenix': 'PHX',
+      'las vegas': 'LAS',
+      'orlando': 'MCO',
+      'washington': 'DCA',
+      'detroit': 'DTW',
+      'minneapolis': 'MSP',
+      'portland': 'PDX',
+      'austin': 'AUS'
+    };
+
+    // If it's already a 3-letter code, return it as-is
+    if (/^[A-Z]{3}$/i.test(cityName)) {
+      return cityName.toUpperCase();
+    }
+
+    try {
+      // Try to get airport info from Amadeus API
+      const airports = await this.getAirportInfo(cityName);
+
+      if (airports && airports.length > 0) {
+        return airports[0].iataCode;
+      }
+    } catch (error) {
+      console.warn(`Failed to lookup airport for ${cityName}, using fallback:`, error.message);
+    }
+
+    // Use fallback mapping
+    const normalizedCity = cityName.toLowerCase().trim();
+    const airportCode = cityToAirportMap[normalizedCity];
+
+    if (airportCode) {
+      return airportCode;
+    }
+
+    // If no mapping found, return original and let Amadeus API return proper error
+    return cityName;
+  }
+
   async searchFlights(searchParams) {
     await this.ensureInitialized();
-    
+
     if (!this.isEnabled) {
       throw new Error('Amadeus service is not properly configured. Check your API credentials.');
     }
@@ -81,11 +134,16 @@ class AmadeusService {
         maxResults = 10
       } = searchParams;
 
-      console.log('Searching flights:', { origin, destination, departureDate });
+      // Convert city names to airport codes
+      const originCode = await this.getCityAirportCode(origin);
+      const destinationCode = await this.getCityAirportCode(destination);
+
+      console.log(`Converted: ${origin} → ${originCode}, ${destination} → ${destinationCode}`);
+      console.log('Searching flights:', { origin: originCode, destination: destinationCode, departureDate });
 
       const response = await this.amadeus.shopping.flightOffersSearch.get({
-        originLocationCode: origin,
-        destinationLocationCode: destination,
+        originLocationCode: originCode,
+        destinationLocationCode: destinationCode,
         departureDate: departureDate,
         returnDate: returnDate,
         adults: adults,
@@ -95,7 +153,7 @@ class AmadeusService {
       return this.transformFlightData(response.data);
     } catch (error) {
       console.error('Amadeus flight search error:', error);
-      
+
       // More helpful error messages
       if (error.code === 'NetworkError') {
         throw new Error('Unable to connect to Amadeus API. Check your internet connection.');
@@ -106,7 +164,7 @@ class AmadeusService {
       if (error.response?.status === 400) {
         throw new Error(`Invalid flight search parameters: ${error.response.data?.error_description || error.message}`);
       }
-      
+
       throw new Error(`Flight search failed: ${error.message}`);
     }
   }

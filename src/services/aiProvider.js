@@ -36,7 +36,8 @@ class OpenAIProvider extends BaseAIProvider {
     this.client = new OpenAI({
       apiKey: config.apiKey || process.env.OPENAI_API_KEY,
     });
-    this.model = config.model || 'gpt-3.5-turbo';
+    // **FIX: Use gpt-4 (128K context) or gpt-3.5-turbo-16k**
+    this.model = config.model || 'gpt-4-turbo-preview';  // or 'gpt-3.5-turbo-16k'
   }
 
   async generateCompletion(prompt, options = {}) {
@@ -45,7 +46,7 @@ class OpenAIProvider extends BaseAIProvider {
         model: this.model,
         messages: [{ role: 'user', content: prompt }],
         temperature: options.temperature || 0.7,
-        max_tokens: options.maxTokens || 1000,
+        max_tokens: options.maxTokens || 500,  // **FIX: Reduced from 1000**
         ...options,
       });
       
@@ -56,27 +57,6 @@ class OpenAIProvider extends BaseAIProvider {
       };
     } catch (error) {
       throw new Error(`OpenAI API error: ${error.message}`);
-    }
-  }
-
-  async generateStructuredCompletion(prompt, schema, options = {}) {
-    const structuredPrompt = `${prompt}
-
-Please respond in the following JSON format:
-${JSON.stringify(schema, null, 2)}`;
-    
-    const response = await this.generateCompletion(structuredPrompt, {
-      ...options,
-      response_format: { type: 'json_object' }
-    });
-
-    try {
-      return {
-        ...response,
-        content: JSON.parse(response.content),
-      };
-    } catch (error) {
-      throw new Error(`Failed to parse structured response: ${error.message}`);
     }
   }
 }

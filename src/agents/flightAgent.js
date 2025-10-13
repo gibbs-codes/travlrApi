@@ -164,27 +164,31 @@ export class FlightAgent extends TripPlanningAgent {
       };
     }
 
+    // **FIX: Only send top 3 results to reduce token usage**
+    const topResults = results.slice(0, 3).map(flight => ({
+      airline: flight.airline,
+      price: flight.price,
+      duration: flight.duration,
+      stops: flight.stops,
+      departure: { time: flight.departure?.time, airport: flight.departure?.airport },
+      arrival: { time: flight.arrival?.time, airport: flight.arrival?.airport }
+    }));
+
     const prompt = `
-You are a travel expert analyzing flight options. Here are the search criteria and results:
+  You are a travel expert analyzing flight options. 
 
-Search Criteria:
-- Origin: ${task.criteria.origin}
-- Destination: ${task.criteria.destination} 
-- Departure: ${task.criteria.departureDate}
-- Budget: ${task.criteria.maxPrice ? `$${task.criteria.maxPrice} max` : 'No limit'}
-- Preferences: ${JSON.stringify(task.criteria)}
+  Search: ${task.criteria.origin} → ${task.criteria.destination} on ${task.criteria.departureDate}
+  Budget: ${task.criteria.maxPrice ? `$${task.criteria.maxPrice}` : 'Flexible'}
 
-Flight Options Found:
-${JSON.stringify(results.slice(0, 5), null, 2)}
+  Top 3 Flights:
+  ${JSON.stringify(topResults, null, 1)}  // **FIX: Use compact formatting**
 
-Please provide:
-1. Your top 3 flight recommendations with clear reasoning
-2. Key factors you considered (price, duration, stops, timing)
-3. Any notable trade-offs or alternatives
-4. Confidence score (0-100) based on options available
+  Provide:
+  1. Top recommendation with reasoning (50 words max)
+  2. Confidence score (0-100)
 
-Be conversational and helpful, like a knowledgeable travel agent.
-    `;
+  Be concise.
+    `.trim();  // **FIX: Remove whitespace**
 
     try {
       const aiResponse = await this.generateStructuredResponse(prompt, this.resultSchema);
@@ -208,7 +212,7 @@ Be conversational and helpful, like a knowledgeable travel agent.
     } catch (error) {
       console.error('AI recommendation generation failed:', error);
       
-      // Fallback to rule-based recommendations
+      // **IMPORTANT: Still return recommendations even if AI fails**
       const topFlights = results.slice(0, 3).map((flight, index) => 
         this.transformFlightRecommendation(flight, index)
       );
@@ -217,9 +221,13 @@ Be conversational and helpful, like a knowledgeable travel agent.
         content: {
           recommendations: topFlights,
           confidence: 70,
-          reasoning: `Found ${results.length} flights. Top options selected based on price, duration, and stops.`
+          reasoning: `Found ${results.length} flights. Top options selected based on price and convenience.`
         },
-        metadata: { searchCriteria: task.criteria, aiError: error.message }
+        metadata: { 
+          searchCriteria: task.criteria, 
+          aiError: error.message,
+          fallbackUsed: true  // **FIX: Mark as fallback**
+        }
       };
     }
   }

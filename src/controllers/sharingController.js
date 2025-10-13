@@ -199,8 +199,20 @@ export const disableSharing = async (req, res) => {
       });
     }
 
+    if (!trip.sharing) {
+      trip.sharing = {
+        isEnabled: false,
+        shareableLink: null,
+        linkExpiration: null,
+        createdAt: null,
+        accessCount: 0,
+        lastAccessedAt: null
+      };
+    }
+
     // Disable sharing
     trip.sharing.isEnabled = false;
+    trip.markModified('sharing');
     await trip.save();
 
     res.json(formatSuccess(

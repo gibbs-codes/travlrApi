@@ -239,16 +239,13 @@ export class TripOrchestrator extends BaseAgent {
 
     await this.ensureTripLoaded();
 
-    const recommendationIds = [];
     const errorEntries = [];
+    const normalizedEntries = [];
 
-    for (const rawRecommendation of recommendations) {
+    recommendations.forEach((rawRecommendation, index) => {
       try {
         const normalized = this.normalizeRecommendation(agentName, rawRecommendation);
-        const recommendation = new Recommendation(normalized);
-        await recommendation.validate();
-        await recommendation.save();
-        recommendationIds.push(recommendation._id);
+        normalizedEntries.push({ index, raw: rawRecommendation, normalized });
       } catch (error) {
         const message = this.extractRecommendationError(error);
         errorEntries.push({
@@ -257,9 +254,58 @@ export class TripOrchestrator extends BaseAgent {
           stack: error?.stack
         });
 
-        console.error(`❌ Failed to store ${agentName} recommendation "${rawRecommendation?.name || rawRecommendation?.title || 'Unknown'}":`, message);
+        console.error(`❌ Failed to normalize ${agentName} recommendation "${rawRecommendation?.name || rawRecommendation?.title || 'Unknown'}":`, message);
+      }
+    });
+
+    let insertedDocs = [];
+
+    if (normalizedEntries.length > 0) {
+      try {
+        insertedDocs = await Recommendation.insertMany(
+          normalizedEntries.map((entry) => entry.normalized),
+          {
+            ordered: false,
+            rawResult: false
+          }
+        );
+      } catch (error) {
+        if (Array.isArray(error.insertedDocs)) {
+          insertedDocs = error.insertedDocs;
+        }
+
+        if (Array.isArray(error.writeErrors)) {
+          for (const writeError of error.writeErrors) {
+            const failedEntry = normalizedEntries[writeError.index];
+            errorEntries.push({
+              message: writeError.errmsg || writeError.message,
+              timestamp: new Date(),
+              stack: writeError.err?.stack
+            });
+
+            console.error(`❌ Failed to insert ${agentName} recommendation "${failedEntry?.raw?.name || 'Unknown'}":`, writeError.errmsg || writeError.message);
+          }
+        } else if (error.errors) {
+          Object.values(error.errors).forEach((err) => {
+            errorEntries.push({
+              message: err.message,
+              timestamp: new Date(),
+              stack: err.stack
+            });
+          });
+        } else {
+          errorEntries.push({
+            message: error.message,
+            timestamp: new Date(),
+            stack: error.stack
+          });
+        }
       }
     }
+
+    const recommendationIds = insertedDocs
+      .map((doc) => doc && doc._id)
+      .filter(Boolean);
 
     const updateOps = {
       $set: {
@@ -268,15 +314,13 @@ export class TripOrchestrator extends BaseAgent {
     };
 
     if (recommendationIds.length > 0) {
-      updateOps.$addToSet = {
-        [`recommendations.${agentName}`]: { $each: recommendationIds }
-      };
+      updateOps.$push = updateOps.$push || {};
+      updateOps.$push[`recommendations.${agentName}`] = { $each: recommendationIds };
     }
 
     if (errorEntries.length > 0) {
-      updateOps.$push = {
-        [`agentExecution.agents.${agentName}.errors`]: { $each: errorEntries }
-      };
+      updateOps.$push = updateOps.$push || {};
+      updateOps.$push[`agentExecution.agents.${agentName}.errors`] = { $each: errorEntries };
     }
 
     try {
@@ -288,13 +332,7 @@ export class TripOrchestrator extends BaseAgent {
     if (this.trip && recommendationIds.length > 0) {
       this.trip.recommendations = this.trip.recommendations || {};
       this.trip.recommendations[agentName] = this.trip.recommendations[agentName] || [];
-
-      for (const id of recommendationIds) {
-        const exists = this.trip.recommendations[agentName].some(existing => existing?.toString() === id.toString());
-        if (!exists) {
-          this.trip.recommendations[agentName].push(id);
-        }
-      }
+      this.trip.recommendations[agentName].push(...recommendationIds);
     }
 
     return { ids: recommendationIds, errors: errorEntries };
@@ -594,7 +632,7 @@ export class TripOrchestrator extends BaseAgent {
 
   getPriceType(agentName) {
     const priceTypes = {
-      flight: 'per_person',
+      flight: 'total',
       accommodation: 'per_night', 
       activity: 'per_person',
       restaurant: 'per_person',

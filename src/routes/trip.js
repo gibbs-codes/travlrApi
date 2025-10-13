@@ -45,6 +45,7 @@ import {
   formatError,
   asyncHandler
 } from '../middleware/validation.js';
+import normalizeCreateTrip from '../middleware/normalizeCreateTrip.js';
 
 const router = express.Router();
 
@@ -52,6 +53,7 @@ const router = express.Router();
 
 // POST /api/trip/create - Create trip with orchestrator trigger
 router.post('/create', 
+  normalizeCreateTrip,
   validateTripCreation,
   asyncHandler(createTrip)
 );

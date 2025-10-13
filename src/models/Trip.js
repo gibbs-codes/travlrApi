@@ -620,7 +620,8 @@ tripSchema.virtual('estimatedBudget').get(function() {
 
 tripSchema.virtual('isShareLinkActive').get(function() {
   const sharing = this.sharing || this.collaboration?.sharing;
-  if (!sharing?.isEnabled || !sharing.shareableLink) return false;
+  const isEnabled = Boolean(sharing?.isEnabled);
+  if (!isEnabled || !sharing?.shareableLink) return false;
   if (!sharing.linkExpiration) return true; // No expiration set
   return new Date() < sharing.linkExpiration;
 });
@@ -643,7 +644,6 @@ tripSchema.index({ 'destination.name': 1 });
 tripSchema.index({ status: 1, updatedAt: -1 });
 tripSchema.index({ 'collaboration.collaborators.userId': 1 });
 tripSchema.index({ tags: 1 });
-tripSchema.index({ 'sharing.shareableLink': 1 }, { sparse: true });
 tripSchema.index({ 'sharing.isEnabled': 1, 'sharing.linkExpiration': 1 });
 
 export default mongoose.model('Trip', tripSchema);

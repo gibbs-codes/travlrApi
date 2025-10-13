@@ -189,10 +189,16 @@ Be conversational and helpful, like a knowledgeable travel agent.
     try {
       const aiResponse = await this.generateStructuredResponse(prompt, this.resultSchema);
       
+      const topFlights = results.slice(0, 3).map((flight, index) => 
+        this.transformFlightRecommendation(flight, index)
+      );
+
       return {
-        recommendations: results.slice(0, 3), // Top 3 flights
-        confidence: aiResponse.content.confidence || 85,
-        reasoning: aiResponse.content.reasoning || 'Based on price, convenience, and travel time.',
+        content: {
+          recommendations: topFlights,
+          confidence: aiResponse.content.confidence || 85,
+          reasoning: aiResponse.content.reasoning || 'Based on price, convenience, and travel time.'
+        },
         metadata: {
           totalFound: results.length,
           searchCriteria: task.criteria,
@@ -203,12 +209,75 @@ Be conversational and helpful, like a knowledgeable travel agent.
       console.error('AI recommendation generation failed:', error);
       
       // Fallback to rule-based recommendations
+      const topFlights = results.slice(0, 3).map((flight, index) => 
+        this.transformFlightRecommendation(flight, index)
+      );
+
       return {
-        recommendations: results.slice(0, 3),
-        confidence: 70,
-        reasoning: `Found ${results.length} flights. Top options selected based on price, duration, and stops.`,
+        content: {
+          recommendations: topFlights,
+          confidence: 70,
+          reasoning: `Found ${results.length} flights. Top options selected based on price, duration, and stops.`
+        },
         metadata: { searchCriteria: task.criteria, aiError: error.message }
       };
     }
+  }
+
+  transformFlightRecommendation(flight, position = 0) {
+    const amount = Number(
+      flight?.price?.amount ??
+      flight?.price ??
+      flight?.cost ??
+      0
+    );
+
+    const safeAmount = Number.isFinite(amount) && amount >= 0 ? amount : 0;
+    const currency = (flight?.price?.currency || flight?.currency || 'USD').toString().toUpperCase();
+
+    const ratingScore = flight?.rating?.score ?? flight?.rating ?? flight?.score ?? 0;
+    const safeRating = Number.isFinite(Number(ratingScore)) ? Number(ratingScore) : 0;
+
+    const departureAirport = flight?.departure?.airport || flight?.origin;
+    const arrivalAirport = flight?.arrival?.airport || flight?.destination;
+
+    const name = flight?.name ||
+      `${flight?.airline || 'Flight'} ${flight?.flightNumber || flight?.id || position + 1}`.trim();
+
+    const description = flight?.description ||
+      `Flight from ${departureAirport || 'origin'} to ${arrivalAirport || 'destination'} on ${flight?.departure?.date || 'selected date'}.`;
+
+    return {
+      ...flight,
+      name,
+      description,
+      price: {
+        amount: safeAmount,
+        currency,
+        priceType: 'total'
+      },
+      rating: {
+        score: Math.max(0, Math.min(5, safeRating)),
+        reviewCount: flight?.rating?.reviewCount ?? flight?.reviewCount ?? 0,
+        source: flight?.rating?.source || flight?.airline || 'flight_agent'
+      },
+      location: flight?.location || {
+        city: arrivalAirport,
+        country: flight?.arrival?.country
+      },
+      agentMetadata: {
+        airline: flight?.airline,
+        flightNumber: flight?.flightNumber || flight?.id,
+        departureAirport,
+        departureTime: flight?.departure?.time,
+        departureDate: flight?.departure?.date,
+        arrivalAirport,
+        arrivalTime: flight?.arrival?.time,
+        arrivalDate: flight?.arrival?.date,
+        duration: flight?.duration,
+        stops: flight?.stops ?? 0,
+        cabin: flight?.class || flight?.cabin
+      }
+    };
   }
 }

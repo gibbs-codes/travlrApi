@@ -223,10 +223,16 @@ Be conversational and helpful, like a knowledgeable travel agent.
     try {
       const aiResponse = await this.generateStructuredResponse(prompt, this.resultSchema);
       
+      const topHotels = results.slice(0, 3).map((hotel, index) =>
+        this.transformAccommodationRecommendation(hotel, index)
+      );
+
       return {
-        recommendations: results.slice(0, 3), // Top 3 accommodations
-        confidence: aiResponse.content.confidence || 85,
-        reasoning: aiResponse.content.reasoning || 'Based on price, location, rating, and amenities.',
+        content: {
+          recommendations: topHotels, // Top 3 accommodations
+          confidence: aiResponse.content.confidence || 85,
+          reasoning: aiResponse.content.reasoning || 'Based on price, location, rating, and amenities.'
+        },
         metadata: {
           totalFound: results.length,
           searchCriteria: task.criteria,
@@ -237,12 +243,71 @@ Be conversational and helpful, like a knowledgeable travel agent.
       console.error('AI recommendation generation failed:', error);
       
       // Fallback to rule-based recommendations
+      const topHotels = results.slice(0, 3).map((hotel, index) =>
+        this.transformAccommodationRecommendation(hotel, index)
+      );
+
       return {
-        recommendations: results.slice(0, 3),
-        confidence: 70,
-        reasoning: `Found ${results.length} accommodations. Top options selected based on rating, location, and price.`,
+        content: {
+          recommendations: topHotels,
+          confidence: 70,
+          reasoning: `Found ${results.length} accommodations. Top options selected based on rating, location, and price.`
+        },
         metadata: { searchCriteria: task.criteria, aiError: error.message }
       };
     }
+  }
+
+  transformAccommodationRecommendation(hotel, position = 0) {
+    const amount = Number(
+      hotel?.price?.amount ??
+      hotel?.price ??
+      hotel?.cost ??
+      0
+    );
+    const safeAmount = Number.isFinite(amount) && amount >= 0 ? amount : 0;
+
+    const currency = (hotel?.price?.currency || hotel?.currency || 'USD').toString().toUpperCase();
+
+    const ratingScore = hotel?.rating?.score ?? hotel?.rating ?? 0;
+    const safeRating = Number.isFinite(Number(ratingScore)) ? Number(ratingScore) : 0;
+
+    const name = hotel?.name || `Hotel option ${position + 1}`;
+    const description = hotel?.description ||
+      `${name} offering comfortable stay near ${hotel?.location?.distance || 'the city center'}.`;
+
+    const amenities = Array.isArray(hotel?.amenities) ? hotel.amenities : [];
+
+    const location = hotel?.location || {};
+
+    return {
+      ...hotel,
+      name,
+      description,
+      price: {
+        amount: safeAmount,
+        currency,
+        priceType: 'per_night'
+      },
+      rating: {
+        score: Math.max(0, Math.min(5, safeRating)),
+        reviewCount: hotel?.rating?.reviewCount ?? hotel?.reviewCount ?? 0,
+        source: hotel?.rating?.source || 'accommodation_agent'
+      },
+      location: {
+        address: location?.address,
+        city: location?.city,
+        country: location?.country,
+        coordinates: location?.coordinates
+      },
+      amenities,
+      agentMetadata: {
+        hotelType: hotel?.type || 'hotel',
+        amenities,
+        roomType: hotel?.roomType || 'standard',
+        checkIn: hotel?.checkIn || hotel?.checkInDate,
+        checkOut: hotel?.checkOut || hotel?.checkOutDate
+      }
+    };
   }
 }

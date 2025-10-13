@@ -42,9 +42,10 @@ app.use('/api', sharingRoutes);
 
 app.get('/health', (_req, res) => {
   const dbStatus = databaseService.getConnectionStatus();
-  res.status(200).json({ 
-    status: 'OK', 
-    message: 'Server is running',
+  res.status(200).json({
+    ok: true,
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
     database: dbStatus
   });
 });

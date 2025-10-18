@@ -63,12 +63,18 @@ export const validateTripCreation = (req, res, next) => {
 
   // Budget validation
   if (body.budget && typeof body.budget === 'object') {
-    const { total, ...categories } = body.budget;
-    
+    const { total, currency, ...categories } = body.budget;
+
     if (total !== undefined && (typeof total !== 'number' || total < 0)) {
       errors.push('budget.total must be a positive number');
     }
 
+    // Validate currency separately as a string
+    if (currency !== undefined && typeof currency !== 'string') {
+      errors.push('budget.currency must be a string');
+    }
+
+    // Now check the remaining properties (breakdown categories)
     for (const [category, amount] of Object.entries(categories)) {
       if (amount !== undefined && (typeof amount !== 'number' || amount < 0)) {
         errors.push(`budget.${category} must be a positive number`);

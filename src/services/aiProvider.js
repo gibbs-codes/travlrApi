@@ -49,7 +49,7 @@ class OpenAIProvider extends BaseAIProvider {
         max_tokens: options.maxTokens || 500,  // **FIX: Reduced from 1000**
         ...options,
       });
-      
+
       return {
         content: response.choices[0].message.content,
         usage: response.usage,
@@ -57,6 +57,36 @@ class OpenAIProvider extends BaseAIProvider {
       };
     } catch (error) {
       throw new Error(`OpenAI API error: ${error.message}`);
+    }
+  }
+
+  async generateStructuredCompletion(prompt, schema, options = {}) {
+    const structuredPrompt = `${prompt}
+
+Please respond in the following JSON format:
+${JSON.stringify(schema, null, 2)}
+
+Only return valid JSON, no additional text.`;
+
+    try {
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        messages: [{ role: 'user', content: structuredPrompt }],
+        temperature: options.temperature || 0.7,
+        max_tokens: options.maxTokens || 1000,
+        response_format: { type: 'json_object' },
+        ...options,
+      });
+
+      const content = JSON.parse(response.choices[0].message.content);
+
+      return {
+        content,
+        usage: response.usage,
+        model: response.model,
+      };
+    } catch (error) {
+      throw new Error(`OpenAI structured completion error: ${error.message}`);
     }
   }
 }

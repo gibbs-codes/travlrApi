@@ -18,7 +18,7 @@ export class AccommodationAgent extends TripPlanningAgent {
   async search(criteria) {
     try {
       console.log('AccommodationAgent searching with criteria:', criteria);
-      
+
       // Validate required criteria
       if (!criteria.destination || !criteria.checkInDate || !criteria.checkOutDate) {
         throw new Error('Missing required accommodation criteria: destination, checkInDate, checkOutDate');
@@ -30,7 +30,8 @@ export class AccommodationAgent extends TripPlanningAgent {
         checkIn: criteria.checkInDate,
         checkOut: criteria.checkOutDate,
         guests: criteria.guests || criteria.travelers || 1,
-        maxResults: this.searchConfig.maxResults
+        maxResults: this.searchConfig.maxResults,
+        currency: criteria.currency || 'USD' // Pass currency preference
       };
 
       const accommodations = await bookingService.searchHotels(searchParams);
@@ -38,16 +39,16 @@ export class AccommodationAgent extends TripPlanningAgent {
 
       // Apply client-side filtering
       return this.applyFilters(accommodations, criteria);
-      
+
     } catch (error) {
       console.error('AccommodationAgent search error:', error);
-      
+
       // Fallback to mock data if API fails (for development)
       if (process.env.NODE_ENV === 'development') {
         console.log('Falling back to mock data for development');
         return this.getMockAccommodations(criteria);
       }
-      
+
       throw error;
     }
   }
@@ -57,7 +58,8 @@ export class AccommodationAgent extends TripPlanningAgent {
       maxPrice: criteria.maxPrice,
       minRating: criteria.minRating,
       accommodationType: criteria.accommodationType,
-      requiredAmenities: criteria.requiredAmenities
+      requiredAmenities: criteria.requiredAmenities,
+      currency: criteria.currency || 'USD'
     });
 
     // Use more lenient defaults
@@ -66,11 +68,25 @@ export class AccommodationAgent extends TripPlanningAgent {
 
     console.log(`Using minRating: ${effectiveMinRating} (original: ${criteria.minRating})`);
 
+    const expectedCurrency = criteria.currency || 'USD';
+
     const filtered = accommodations.filter(accommodation => {
+      // Currency validation - warn if mismatch but don't filter out
+      if (accommodation.currency && accommodation.currency !== expectedCurrency) {
+        console.warn(`⚠️ ${accommodation.name}: Currency mismatch (${accommodation.currency} vs expected ${expectedCurrency})`);
+      }
+
       // Price filter - only apply if maxPrice exists AND is greater than 0
-      if (criteria.maxPrice && criteria.maxPrice > 0 && accommodation.price > criteria.maxPrice) {
-        console.log(`❌ ${accommodation.name}: Price too high ($${accommodation.price} > $${criteria.maxPrice})`);
-        return false;
+      // AND currency matches (to avoid comparing EUR to USD prices)
+      if (criteria.maxPrice && criteria.maxPrice > 0) {
+        const sameCurrency = !accommodation.currency || accommodation.currency === expectedCurrency;
+
+        if (!sameCurrency) {
+          console.warn(`⚠️ ${accommodation.name}: Skipping price filter due to currency mismatch`);
+        } else if (accommodation.price > criteria.maxPrice) {
+          console.log(`❌ ${accommodation.name}: Price too high ($${accommodation.price} > $${criteria.maxPrice})`);
+          return false;
+        }
       }
 
       // Rating filter - handle rating scale conversion

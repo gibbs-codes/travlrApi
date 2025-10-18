@@ -6,6 +6,8 @@ class AmadeusService {
     this.amadeus = null;
     this.isEnabled = null; // null means not initialized yet
     this.initializePromise = null;
+    this.airportCodeCache = new Map(); // In-memory cache for airport lookups
+    this.rateLimitRetryAfter = null; // Track when rate limit will reset
   }
 
   async initialize() {
@@ -65,11 +67,27 @@ class AmadeusService {
   }
 
   async getCityAirportCode(cityName) {
-    // Fallback mapping for common cities
+    // If it's already a 3-letter code, return it as-is
+    if (/^[A-Z]{3}$/i.test(cityName)) {
+      return cityName.toUpperCase();
+    }
+
+    const normalizedCity = cityName.toLowerCase().trim();
+
+    // Check cache first
+    if (this.airportCodeCache.has(normalizedCity)) {
+      console.log(`✓ Cache hit for ${cityName}: ${this.airportCodeCache.get(normalizedCity)}`);
+      return this.airportCodeCache.get(normalizedCity);
+    }
+
+    // Expanded fallback mapping for common cities - USE THIS FIRST to avoid rate limits
     const cityToAirportMap = {
+      // US Cities
       'new york': 'JFK',
+      'nyc': 'JFK',
       'chicago': 'ORD',
       'los angeles': 'LAX',
+      'la': 'LAX',
       'san francisco': 'SFO',
       'miami': 'MIA',
       'boston': 'BOS',
@@ -83,15 +101,111 @@ class AmadeusService {
       'las vegas': 'LAS',
       'orlando': 'MCO',
       'washington': 'DCA',
+      'washington dc': 'DCA',
       'detroit': 'DTW',
       'minneapolis': 'MSP',
       'portland': 'PDX',
-      'austin': 'AUS'
+      'austin': 'AUS',
+      'nashville': 'BNA',
+      'charlotte': 'CLT',
+      'san diego': 'SAN',
+      'tampa': 'TPA',
+      'salt lake city': 'SLC',
+      'san antonio': 'SAT',
+      'sacramento': 'SMF',
+      'pittsburgh': 'PIT',
+      'cincinnati': 'CVG',
+      'kansas city': 'MCI',
+      'columbus': 'CMH',
+      'indianapolis': 'IND',
+      'cleveland': 'CLE',
+      'san jose': 'SJC',
+      'raleigh': 'RDU',
+      'memphis': 'MEM',
+      'louisville': 'SDF',
+      'milwaukee': 'MKE',
+      'albuquerque': 'ABQ',
+      'tucson': 'TUS',
+      'honolulu': 'HNL',
+      'anchorage': 'ANC',
+
+      // International Cities
+      'london': 'LHR',
+      'paris': 'CDG',
+      'tokyo': 'NRT',
+      'beijing': 'PEK',
+      'shanghai': 'PVG',
+      'hong kong': 'HKG',
+      'singapore': 'SIN',
+      'dubai': 'DXB',
+      'sydney': 'SYD',
+      'melbourne': 'MEL',
+      'toronto': 'YYZ',
+      'vancouver': 'YVR',
+      'montreal': 'YUL',
+      'mexico city': 'MEX',
+      'frankfurt': 'FRA',
+      'amsterdam': 'AMS',
+      'madrid': 'MAD',
+      'barcelona': 'BCN',
+      'rome': 'FCO',
+      'milan': 'MXP',
+      'zurich': 'ZRH',
+      'vienna': 'VIE',
+      'brussels': 'BRU',
+      'munich': 'MUC',
+      'istanbul': 'IST',
+      'athens': 'ATH',
+      'lisbon': 'LIS',
+      'dublin': 'DUB',
+      'copenhagen': 'CPH',
+      'stockholm': 'ARN',
+      'oslo': 'OSL',
+      'helsinki': 'HEL',
+      'warsaw': 'WAW',
+      'prague': 'PRG',
+      'budapest': 'BUD',
+      'moscow': 'SVO',
+      'delhi': 'DEL',
+      'mumbai': 'BOM',
+      'bangalore': 'BLR',
+      'seoul': 'ICN',
+      'bangkok': 'BKK',
+      'kuala lumpur': 'KUL',
+      'jakarta': 'CGK',
+      'manila': 'MNL',
+      'taipei': 'TPE',
+      'ho chi minh': 'SGN',
+      'hanoi': 'HAN',
+      'sao paulo': 'GRU',
+      'rio de janeiro': 'GIG',
+      'buenos aires': 'EZE',
+      'santiago': 'SCL',
+      'bogota': 'BOG',
+      'lima': 'LIM',
+      'johannesburg': 'JNB',
+      'cape town': 'CPT',
+      'cairo': 'CAI',
+      'casablanca': 'CMN',
+      'tel aviv': 'TLV',
+      'riyadh': 'RUH',
+      'doha': 'DOH',
+      'abu dhabi': 'AUH',
+      'auckland': 'AKL'
     };
 
-    // If it's already a 3-letter code, return it as-is
-    if (/^[A-Z]{3}$/i.test(cityName)) {
-      return cityName.toUpperCase();
+    // Check fallback map FIRST to avoid unnecessary API calls
+    const airportCode = cityToAirportMap[normalizedCity];
+    if (airportCode) {
+      console.log(`✓ Fallback map hit for ${cityName}: ${airportCode}`);
+      this.airportCodeCache.set(normalizedCity, airportCode);
+      return airportCode;
+    }
+
+    // Only call API if not in fallback map and not rate-limited
+    if (this.isRateLimited()) {
+      console.warn(`⚠️ Rate limited, using city name as-is: ${cityName}`);
+      return cityName;
     }
 
     try {
@@ -99,25 +213,44 @@ class AmadeusService {
       const airports = await this.getAirportInfo(cityName);
 
       if (airports && airports.length > 0) {
-        return airports[0].iataCode;
+        const code = airports[0].iataCode;
+        console.log(`✓ API lookup for ${cityName}: ${code}`);
+        this.airportCodeCache.set(normalizedCity, code);
+        return code;
       }
     } catch (error) {
-      console.warn(`Failed to lookup airport for ${cityName}, using fallback:`, error.message);
+      // Handle rate limit errors
+      if (error.response?.result?.errors?.[0]?.code === 38194 || error.response?.status === 429) {
+        console.warn(`⚠️ Rate limit hit for airport lookup: ${cityName}`);
+        this.setRateLimitTimeout();
+      } else {
+        console.warn(`Failed to lookup airport for ${cityName}:`, error.message);
+      }
     }
 
-    // Use fallback mapping
-    const normalizedCity = cityName.toLowerCase().trim();
-    const airportCode = cityToAirportMap[normalizedCity];
-
-    if (airportCode) {
-      return airportCode;
-    }
-
-    // If no mapping found, return original and let Amadeus API return proper error
+    // If no mapping found, return original and let Amadeus flight search API return proper error
+    console.warn(`⚠️ No airport code found for ${cityName}, using as-is`);
     return cityName;
   }
 
-  async searchFlights(searchParams) {
+  isRateLimited() {
+    if (!this.rateLimitRetryAfter) return false;
+    const now = Date.now();
+    if (now < this.rateLimitRetryAfter) {
+      return true;
+    }
+    // Reset if timeout has passed
+    this.rateLimitRetryAfter = null;
+    return false;
+  }
+
+  setRateLimitTimeout(seconds = 60) {
+    // Set a timeout before retrying API calls
+    this.rateLimitRetryAfter = Date.now() + (seconds * 1000);
+    console.log(`⏱️ Rate limit timeout set for ${seconds} seconds`);
+  }
+
+  async searchFlights(searchParams, retryCount = 0) {
     await this.ensureInitialized();
 
     if (!this.isEnabled) {
@@ -154,6 +287,22 @@ class AmadeusService {
     } catch (error) {
       console.error('Amadeus flight search error:', error);
 
+      // Handle rate limiting with exponential backoff
+      const isRateLimitError = error.response?.result?.errors?.[0]?.code === 38194 || error.response?.status === 429;
+
+      if (isRateLimitError && retryCount < 3) {
+        const backoffSeconds = Math.pow(2, retryCount) * 10; // 10s, 20s, 40s
+        console.warn(`⚠️ Rate limit hit (attempt ${retryCount + 1}/3). Retrying in ${backoffSeconds}s...`);
+
+        this.setRateLimitTimeout(backoffSeconds);
+
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, backoffSeconds * 1000));
+
+        // Retry with incremented count
+        return this.searchFlights(searchParams, retryCount + 1);
+      }
+
       // More helpful error messages
       if (error.code === 'NetworkError') {
         throw new Error('Unable to connect to Amadeus API. Check your internet connection.');
@@ -163,6 +312,9 @@ class AmadeusService {
       }
       if (error.response?.status === 400) {
         throw new Error(`Invalid flight search parameters: ${error.response.data?.error_description || error.message}`);
+      }
+      if (isRateLimitError) {
+        throw new Error('Amadeus API rate limit exceeded. Please try again later.');
       }
 
       throw new Error(`Flight search failed: ${error.message}`);

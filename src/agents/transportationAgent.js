@@ -187,19 +187,19 @@ export class TransportationAgent extends TripPlanningAgent {
 
   calculateTransportScore(option) {
     let score = 100;
-    
+
     // Cost factor (lower cost = higher score)
     score -= (option.estimatedCost / 2);
-    
+
     // Time factor (faster = higher score)
     const timeInMinutes = this.parseTimeToMinutes(option.estimatedTime);
     score -= (timeInMinutes / 3);
-    
+
     // Availability factor (immediate availability preferred)
     if (option.availability === 'immediate') score += 20;
     else if (option.availability && option.availability.includes('5')) score += 15;
     else if (option.availability && option.availability.includes('10')) score += 10;
-    
+
     // Type preferences - prioritize efficient modes
     const typeBonus = {
       'driving': 15,
@@ -212,27 +212,111 @@ export class TransportationAgent extends TripPlanningAgent {
       'rental': 5
     };
     score += (typeBonus[option.type] || 0);
-    
+
     // Features bonus
     if (option.features && Array.isArray(option.features)) {
       score += (option.features.length * 2);
     }
-    
+
     // Capacity consideration
     if (option.capacity >= 4) score += 5;
-    
+
     // Real-time data bonus (Google Directions vs mock)
     if (option.id && !option.id.startsWith('TRANS')) {
       score += 10; // Bonus for real Google Directions data
     }
-    
+
     // Route efficiency bonus
     if (option.route && option.route.distance) {
       // Prefer shorter distances for same time
       const distanceValue = parseFloat(option.route.distance.replace(/[^\d.]/g, ''));
       if (distanceValue && distanceValue < 10) score += 5;
     }
-    
+
     return Math.max(0, score);
+  }
+
+  async generateRecommendations(results, task) {
+    const startTime = Date.now();
+    console.log('🎯 TransportationAgent.generateRecommendations: Starting');
+    console.log(`   Input: ${results ? results.length : 0} results`);
+
+    if (!results || results.length === 0) {
+      console.warn('⚠️ TransportationAgent: No results to transform');
+      return {
+        content: {
+          recommendations: [],
+          confidence: 0,
+          reasoning: 'No transportation options found.'
+        },
+        metadata: { searchCriteria: task.criteria }
+      };
+    }
+
+    console.log('🔍 TransportationAgent: Transforming transportation data...');
+
+    // Transform to TripOrchestrator recommendation format
+    const recommendations = results.slice(0, 5).map((option, index) => {
+      console.log(`   Processing option ${index + 1}:`, {
+        type: option.type,
+        provider: option.provider,
+        service: option.service,
+        cost: option.estimatedCost,
+        time: option.estimatedTime
+      });
+
+      const recommendation = {
+        id: option.id || `transport_${index + 1}`,
+        name: option.service || option.provider || 'Transportation Option',
+        description: `${option.type} via ${option.provider || 'local service'}: ${option.estimatedTime || 'estimated time'}${option.route?.distance ? `, ${option.route.distance}` : ''}`,
+        price: {
+          amount: option.estimatedCost || 0,
+          currency: task.criteria?.currency || 'USD',
+          priceType: 'total'
+        },
+        rating: {
+          score: 0,
+          reviewCount: 0,
+          source: 'transportation_agent'
+        },
+        location: {
+          city: task.criteria?.destination
+        },
+        agentMetadata: {
+          transportType: option.type,
+          provider: option.provider,
+          service: option.service,
+          estimatedTime: option.estimatedTime,
+          availability: option.availability,
+          capacity: option.capacity,
+          features: option.features || [],
+          route: option.route
+        }
+      };
+
+      console.log(`   Created recommendation:`, {
+        name: recommendation.name,
+        type: recommendation.agentMetadata.transportType,
+        price: recommendation.price.amount
+      });
+
+      return recommendation;
+    });
+
+    const duration = Date.now() - startTime;
+    console.log(`✅ TransportationAgent: Transformed ${recommendations.length} recommendations in ${duration}ms`);
+
+    return {
+      content: {
+        recommendations,
+        confidence: 75,
+        reasoning: `Found ${results.length} transportation options. Recommendations based on cost, time, and convenience.`
+      },
+      metadata: {
+        totalFound: results.length,
+        searchCriteria: task.criteria,
+        source: results[0]?.id?.startsWith('TRANS') ? 'mock' : 'Google Directions'
+      }
+    };
   }
 }

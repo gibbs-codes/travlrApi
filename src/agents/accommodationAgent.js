@@ -55,12 +55,13 @@ export class AccommodationAgent extends TripPlanningAgent {
 
   applyFilters(accommodations, criteria) {
     console.log('🔍 Applying filters with criteria:', {
-      maxPrice: criteria.maxPrice,
+      budgetInfo: criteria.budgetInfo,
       minRating: criteria.minRating,
       accommodationType: criteria.accommodationType,
       requiredAmenities: criteria.requiredAmenities,
       currency: criteria.currency || 'USD'
     });
+    console.log('💡 Note: Budget is informational only - all price points will be shown');
 
     // Use more lenient defaults
     const effectiveMinRating = criteria.minRating && criteria.minRating > 0 ?
@@ -69,6 +70,7 @@ export class AccommodationAgent extends TripPlanningAgent {
     console.log(`Using minRating: ${effectiveMinRating} (original: ${criteria.minRating})`);
 
     const expectedCurrency = criteria.currency || 'USD';
+    const userBudget = criteria.budgetInfo?.accommodation;
 
     const filtered = accommodations.filter(accommodation => {
       // Currency validation - warn if mismatch but don't filter out
@@ -76,18 +78,13 @@ export class AccommodationAgent extends TripPlanningAgent {
         console.warn(`⚠️ ${accommodation.name}: Currency mismatch (${accommodation.currency} vs expected ${expectedCurrency})`);
       }
 
-      // Price filter - only apply if maxPrice exists AND is greater than 0
-      // AND currency matches (to avoid comparing EUR to USD prices)
-      if (criteria.maxPrice && criteria.maxPrice > 0) {
-        const sameCurrency = !accommodation.currency || accommodation.currency === expectedCurrency;
-
-        if (!sameCurrency) {
-          console.warn(`⚠️ ${accommodation.name}: Skipping price filter due to currency mismatch`);
-        } else if (accommodation.price > criteria.maxPrice) {
-          console.log(`❌ ${accommodation.name}: Price too high ($${accommodation.price} > $${criteria.maxPrice})`);
-          return false;
-        }
+      // Price info logging - NO FILTERING, just informational
+      if (userBudget && accommodation.price > userBudget) {
+        console.log(`ℹ️  ${accommodation.name}: Above user budget ($${accommodation.price} > $${userBudget}) but including anyway`);
+      } else if (userBudget) {
+        console.log(`✅ ${accommodation.name}: Within user budget ($${accommodation.price} ≤ $${userBudget})`);
       }
+      // NO RETURN FALSE - we don't filter by price anymore
 
       // Rating filter - handle rating scale conversion
       let convertedRating = accommodation.rating;

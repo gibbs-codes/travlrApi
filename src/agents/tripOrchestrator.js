@@ -39,33 +39,35 @@ export class TripOrchestrator extends BaseAgent {
     };
 
     // Define execution phases with dependencies
+    // IMPORTANT: Sequential execution ensures proper geographic planning
     this.executionPhases = [
       {
-        phase: 'independent',
-        agents: ['flight', 'accommodation'],
-        parallel: true,
-        description: 'Independent agents - flights and hotels'
+        phase: 'accommodation_first',
+        agents: ['accommodation'],
+        parallel: false,
+        description: 'Find hotel first - establishes geographic anchor'
       },
       {
-        phase: 'location_dependent', 
-        agents: ['activity'],
+        phase: 'flights',
+        agents: ['flight'],
         parallel: false,
         dependencies: ['accommodation'],
-        description: 'Activities based on hotel location'
+        description: 'Book flights after hotel location is known'
       },
       {
-        phase: 'activity_dependent',
-        agents: ['restaurant'], 
+        phase: 'experiences',
+        agents: ['activity', 'restaurant'],
         parallel: false,
-        dependencies: ['activity'],
-        description: 'Restaurants based on activity locations'
+        dependencies: ['accommodation', 'flight'],
+        description: 'Plan activities and dining based on hotel location'
       },
       {
         phase: 'validation',
         agents: ['transportation'],
         parallel: false,
-        dependencies: ['accommodation', 'activity', 'restaurant'],
-        description: 'Transportation validation of entire plan'
+        dependencies: ['accommodation', 'flight', 'activity', 'restaurant'],
+        description: 'Transportation validation (not shown in UI yet)',
+        uiEnabled: false  // Flag that this isn't displayed yet
       }
     ];
 
@@ -696,16 +698,22 @@ export class TripOrchestrator extends BaseAgent {
       // Currency standardization - ALWAYS pass to all agents
       currency,
 
-      // Budget information (optional - 0 means no budget limit)
-      totalBudget: hasBudget ? tripRequest.budget.total : undefined,
-      budgetBreakdown: hasBudget ? tripRequest.budget : {},
+      // Budget information (INFORMATIONAL ONLY - not enforced)
+      budgetInfo: hasBudget ? {
+        total: tripRequest.budget.total,
+        flight: tripRequest.budget.flight,
+        accommodation: tripRequest.budget.accommodation,
+        activity: tripRequest.budget.activity,
+        restaurant: tripRequest.budget.restaurant,
+        transportation: tripRequest.budget.transportation,
+        currency: currency
+      } : null,
 
-      // Flight criteria (don't set maxPrice if budget is 0 or undefined)
-      maxPrice: (tripRequest.budget?.flight && tripRequest.budget.flight > 0) ? tripRequest.budget.flight : undefined,
+      // Flight criteria - NO maxPrice enforcement (budget is informational only)
       preferNonStop: tripRequest.preferences?.nonStopFlights,
-      preferredClass: tripRequest.preferences?.flightClass,
+      preferredClass: tripRequest.preferences?.flightClass || 'economy',
 
-      // Accommodation criteria (don't set maxPrice if budget is 0 or undefined)
+      // Accommodation criteria - NO maxPrice enforcement
       checkInDate: tripRequest.departureDate,
       checkOutDate: tripRequest.returnDate,
       accommodationType: tripRequest.preferences?.accommodationType,
@@ -733,9 +741,9 @@ export class TripOrchestrator extends BaseAgent {
 
     console.log('📊 Extracted criteria - Budget handling:', {
       hasBudget,
-      totalBudget: baseCriteria.totalBudget,
-      flightMaxPrice: baseCriteria.maxPrice,
-      transportMaxCost: baseCriteria.maxCost
+      budgetIsInformationalOnly: true,
+      budgetTotal: baseCriteria.budgetInfo?.total || 'none',
+      note: 'Budget will not filter results - all options shown'
     });
 
     return baseCriteria;
@@ -743,23 +751,32 @@ export class TripOrchestrator extends BaseAgent {
 
   initializeBudgetTracking(criteria) {
     this.executionContext.budgetTracking = {
-      allocated: {
-        flight: criteria.budgetBreakdown.flight || 0,
-        accommodation: criteria.budgetBreakdown.accommodation || 0,
-        activity: criteria.budgetBreakdown.activity || 0,
-        restaurant: criteria.budgetBreakdown.restaurant || 0,
-        transportation: criteria.budgetBreakdown.transportation || 0
-      },
-      spent: {
+      hasUserBudget: !!criteria.budgetInfo,
+      userBudgetTotal: criteria.budgetInfo?.total || null,
+      userBudgetByCategory: criteria.budgetInfo ? {
+        flight: criteria.budgetInfo.flight || null,
+        accommodation: criteria.budgetInfo.accommodation || null,
+        activity: criteria.budgetInfo.activity || null,
+        restaurant: criteria.budgetInfo.restaurant || null,
+        transportation: criteria.budgetInfo.transportation || null
+      } : null,
+      estimatedSpend: {
         flight: 0,
         accommodation: 0,
         activity: 0,
         restaurant: 0,
         transportation: 0
       },
-      remaining: { ...criteria.budgetBreakdown },
-      totalAllocated: criteria.totalBudget || 0
+      totalEstimated: 0,
+      note: 'Budget is for user reference only - not enforced by agents',
+      currency: criteria.currency || 'USD'
     };
+
+    if (criteria.budgetInfo) {
+      console.log(`💰 User budget tracking initialized (informational only):`);
+      console.log(`   Total: ${criteria.currency} ${criteria.budgetInfo.total}`);
+      console.log(`   Note: Agents will show all options regardless of budget`);
+    }
   }
 
   // Smart Agent Execution with Dependencies
@@ -768,17 +785,24 @@ export class TripOrchestrator extends BaseAgent {
     const executedAgents = new Set();
     
     console.log('Starting smart agent execution with dependencies...');
-    
+    console.log('📋 Execution order: accommodation → flights → experiences → transportation');
+
     for (const phase of this.executionPhases) {
-      console.log(`\
-Executing phase: ${phase.description}`);
-      
+      console.log(`\n🔹 Executing phase: ${phase.description}`);
+
+      // Log UI visibility status
+      if (phase.uiEnabled === false) {
+        console.log('ℹ️  Note: This phase generates data but UI display is not yet implemented');
+      }
+
       // Check if dependencies are met
       if (phase.dependencies) {
         const missingDeps = phase.dependencies.filter(dep => !executedAgents.has(dep));
         if (missingDeps.length > 0) {
-          console.warn(`Phase ${phase.phase} missing dependencies: ${missingDeps.join(', ')}`);
+          console.warn(`⚠️ Phase ${phase.phase} missing dependencies: ${missingDeps.join(', ')}`);
           continue;
+        } else {
+          console.log(`✅ Dependencies met: ${phase.dependencies.join(', ')}`);
         }
       }
       

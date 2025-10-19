@@ -203,39 +203,128 @@ export class RestaurantAgent extends TripPlanningAgent {
 
   calculateRestaurantScore(restaurant) {
     let score = 100;
-    
+
     // Rating factor (more important for Google Places data)
     if (restaurant.rating && restaurant.rating > 0) {
       score += (restaurant.rating * 25);
     }
-    
+
     // Price factor (moderate pricing preferred)
     const priceMultiplier = { '$': 15, '$$': 20, '$$$': 10, '$$$$': 5 };
     score += (priceMultiplier[restaurant.priceRange] || 0);
-    
+
     // Distance factor (for Google Places, we don't have exact distance but can use location data)
     // This is a placeholder - could be enhanced with actual distance calculation
-    
+
     // Features bonus
     if (restaurant.features && Array.isArray(restaurant.features)) {
       score += (restaurant.features.length * 3);
     }
-    
+
     // Reservation availability
     if (restaurant.reservations) score += 10;
-    
+
     // Cuisine diversity bonus
     const popularCuisines = ['Italian', 'French', 'Japanese', 'Mediterranean', 'Chinese', 'Mexican'];
     if (popularCuisines.includes(restaurant.cuisine)) score += 8;
-    
+
     // Bonus for highly rated restaurants
     if (restaurant.rating >= 4.5) score += 15;
     if (restaurant.rating >= 4.0) score += 10;
-    
+
     // Bonus for restaurants with photos (indicates more complete Google Places data)
     if (restaurant.photos && restaurant.photos.length > 0) score += 5;
-    
+
     return Math.max(0, score);
+  }
+
+  async generateRecommendations(results, task) {
+    const startTime = Date.now();
+    console.log('🎯 RestaurantAgent.generateRecommendations: Starting');
+    console.log(`   Input: ${results ? results.length : 0} results`);
+
+    if (!results || results.length === 0) {
+      console.warn('⚠️ RestaurantAgent: No results to transform');
+      return {
+        content: {
+          recommendations: [],
+          confidence: 0,
+          reasoning: 'No restaurants found matching your criteria.'
+        },
+        metadata: { searchCriteria: task.criteria }
+      };
+    }
+
+    console.log('🔍 RestaurantAgent: Transforming Google Places data...');
+
+    // Transform Google Places schema to TripOrchestrator recommendation format
+    const recommendations = results.slice(0, 5).map((restaurant, index) => {
+      console.log(`   Processing restaurant ${index + 1}:`, {
+        name: restaurant.name,
+        rating: restaurant.rating,
+        priceRange: restaurant.priceRange,
+        cuisine: restaurant.cuisine,
+        hasPhotos: !!(restaurant.photos && restaurant.photos.length > 0)
+      });
+
+      const recommendation = {
+        id: restaurant.id,
+        name: restaurant.name || 'Unknown Restaurant',
+        description: `${restaurant.cuisine} restaurant${restaurant.location?.address ? ` at ${restaurant.location.address}` : ''}`,
+        price: {
+          amount: restaurant.averageMeal || 0,
+          currency: task.criteria?.currency || 'USD',
+          priceType: 'per_person'
+        },
+        rating: {
+          score: restaurant.rating || 0,
+          reviewCount: 0,
+          source: 'Google Places'
+        },
+        location: {
+          address: restaurant.location?.address,
+          city: task.criteria?.destination,
+          coordinates: restaurant.location?.coordinates
+        },
+        images: restaurant.photos && restaurant.photos.length > 0
+          ? restaurant.photos.map(photo => photo.url)
+          : [],
+        agentMetadata: {
+          cuisine: restaurant.cuisine,
+          priceRange: restaurant.priceRange,
+          features: restaurant.features || [],
+          hours: restaurant.hours,
+          reservations: restaurant.reservations,
+          placeId: restaurant.id
+        }
+      };
+
+      console.log(`   Created recommendation:`, {
+        name: recommendation.name,
+        price: recommendation.price.amount,
+        rating: recommendation.rating.score,
+        hasImages: recommendation.images.length > 0,
+        hasCoordinates: !!recommendation.location.coordinates
+      });
+
+      return recommendation;
+    });
+
+    const duration = Date.now() - startTime;
+    console.log(`✅ RestaurantAgent: Transformed ${recommendations.length} recommendations in ${duration}ms`);
+
+    return {
+      content: {
+        recommendations,
+        confidence: 85,
+        reasoning: `Found ${results.length} restaurants. Recommendations based on ratings, cuisine variety, and location.`
+      },
+      metadata: {
+        totalFound: results.length,
+        searchCriteria: task.criteria,
+        source: 'Google Places'
+      }
+    };
   }
 
 }

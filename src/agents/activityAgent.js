@@ -87,9 +87,23 @@ export class ActivityAgent extends TripPlanningAgent {
   }
 
   async search(criteria) {
+    const startTime = Date.now();
+    console.log('🎯 ActivityAgent.search: Starting');
+    console.log('🎯 ActivityAgent.search: Criteria:', JSON.stringify({
+      destination: criteria.destination,
+      interests: criteria.interests,
+      travelersCount: criteria.travelersCount,
+      budget: criteria.budget,
+      preferredArea: criteria.preferredArea,
+      executionContext: !!criteria.executionContext,
+      tripId: criteria.tripId
+    }, null, 2));
+
     try {
+      console.log('🔍 ActivityAgent.search: Step 1 - Building AI prompt...');
       const prompt = this.buildActivitySearchPrompt(criteria);
-      
+      console.log('📝 ActivityAgent.search: Prompt length:', prompt.length, 'characters');
+
       const activitySchema = {
         recommendations: [
           {
@@ -106,28 +120,53 @@ export class ActivityAgent extends TripPlanningAgent {
         ]
       };
 
+      console.log('🔍 ActivityAgent.search: Step 2 - Calling AI provider...');
+      console.log('   AI Provider:', this.aiProvider?.constructor?.name || 'Unknown');
+      const aiStartTime = Date.now();
+
       const response = await this.generateStructuredResponse(prompt, activitySchema);
+
+      const aiDuration = Date.now() - aiStartTime;
+      console.log(`⏱️ ActivityAgent.search: AI call completed in ${aiDuration}ms`);
+      console.log('📊 ActivityAgent.search: Response type:', typeof response);
       
+      console.log('🔍 ActivityAgent.search: Step 3 - Parsing AI response...');
+
       // More robust response parsing
       let recommendations = null;
-      
+
       if (response) {
+        console.log('   Response has keys:', Object.keys(response));
+
         // Try different possible response structures
         if (response.content && response.content.recommendations && Array.isArray(response.content.recommendations)) {
           recommendations = response.content.recommendations;
+          console.log('   ✅ Found recommendations in response.content.recommendations');
         } else if (response.recommendations && Array.isArray(response.recommendations)) {
           recommendations = response.recommendations;
+          console.log('   ✅ Found recommendations in response.recommendations');
         } else if (response.content && response.content.activities && Array.isArray(response.content.activities)) {
           recommendations = response.content.activities;
+          console.log('   ✅ Found recommendations in response.content.activities');
         } else if (response.activities && Array.isArray(response.activities)) {
           recommendations = response.activities;
+          console.log('   ✅ Found recommendations in response.activities');
         } else if (Array.isArray(response)) {
           recommendations = response;
+          console.log('   ✅ Response is array');
+        } else {
+          console.error('   ❌ Could not find recommendations in response structure');
+          console.error('   Response structure:', JSON.stringify(response, null, 2).substring(0, 500));
         }
+      } else {
+        console.error('   ❌ Response is null/undefined');
       }
-      
+
       if (recommendations && Array.isArray(recommendations) && recommendations.length > 0) {
+        console.log(`✅ ActivityAgent.search: Found ${recommendations.length} recommendations`);
+
         // Sanitize price data - convert "N/A" or invalid strings to null
+        console.log('🔍 ActivityAgent.search: Step 4 - Sanitizing data...');
         const sanitized = recommendations.map(activity => {
           const sanitizedActivity = { ...activity };
 
@@ -142,13 +181,24 @@ export class ActivityAgent extends TripPlanningAgent {
           return sanitizedActivity;
         });
 
+        const totalDuration = Date.now() - startTime;
+        console.log(`✅ ActivityAgent.search: Completed successfully in ${totalDuration}ms`);
         return sanitized;
       } else {
-        throw new Error(`Invalid AI response format. Expected array of recommendations, got: ${typeof response}`);
+        const errorMsg = `Invalid AI response format. Expected array of recommendations, got: ${typeof response}`;
+        console.error(`❌ ActivityAgent.search: ${errorMsg}`);
+        throw new Error(errorMsg);
       }
     } catch (error) {
-      console.warn(`ActivityAgent AI search failed: ${error.message}. Falling back to mock data.`);
-      return this.getMockActivities(criteria);
+      const totalDuration = Date.now() - startTime;
+      console.error(`❌ ActivityAgent.search: Failed after ${totalDuration}ms`);
+      console.error(`   Error: ${error.message}`);
+      console.error(`   Stack: ${error.stack}`);
+      console.warn(`⚠️ ActivityAgent AI search failed: ${error.message}. Falling back to mock data.`);
+
+      const mockData = this.getMockActivities(criteria);
+      console.log(`📊 ActivityAgent.search: Returning ${mockData.length} mock activities as fallback`);
+      return mockData;
     }
   }
 
@@ -202,30 +252,63 @@ Focus on quality over quantity. Make recommendations that would genuinely enhanc
   }
 
   getMockActivities(criteria) {
+    console.log('🎯 ActivityAgent.getMockActivities: Starting');
+    console.log('   Total mock activities available:', this.mockActivities.length);
+    console.log('   Filter criteria:', {
+      budget: criteria.budget,
+      interests: criteria.interests,
+      destination: criteria.destination
+    });
+
     const filtered = this.mockActivities.filter(activity => {
-      if (criteria.budget && activity.price > criteria.budget) return false;
+      if (criteria.budget && activity.price > criteria.budget) {
+        console.log(`   ❌ Filtered out ${activity.name}: price ${activity.price} > budget ${criteria.budget}`);
+        return false;
+      }
       if (criteria.interests && criteria.interests.length > 0) {
-        const hasMatchingInterest = criteria.interests.some(interest => 
+        const hasMatchingInterest = criteria.interests.some(interest =>
           activity.category.toLowerCase().includes(interest.toLowerCase()) ||
           activity.description.toLowerCase().includes(interest.toLowerCase())
         );
-        if (!hasMatchingInterest) return false;
+        if (!hasMatchingInterest) {
+          console.log(`   ❌ Filtered out ${activity.name}: no matching interests`);
+          return false;
+        }
       }
+      console.log(`   ✅ Included ${activity.name}`);
       return true;
     });
 
+    console.log(`📊 ActivityAgent.getMockActivities: Returning ${filtered.length}/${this.mockActivities.length} activities`);
     return filtered;
   }
 
   async rank(results) {
+    console.log('🎯 ActivityAgent.rank: Starting');
+    console.log(`   Input: ${results ? (Array.isArray(results) ? results.length : 'not array') : 'null'} results`);
+
     if (!results || !Array.isArray(results)) {
+      console.warn('⚠️ ActivityAgent.rank: Results is not an array, returning as-is');
       return results;
     }
 
-    return results.map(activity => ({
+    if (results.length === 0) {
+      console.warn('⚠️ ActivityAgent.rank: Results array is empty');
+      return results;
+    }
+
+    console.log('🔍 ActivityAgent.rank: Calculating scores and sorting...');
+    const ranked = results.map(activity => ({
       ...activity,
       score: this.calculateActivityScore(activity)
     })).sort((a, b) => b.score - a.score);
+
+    console.log(`✅ ActivityAgent.rank: Ranked ${ranked.length} activities`);
+    if (ranked.length > 0) {
+      console.log(`   Top activity: ${ranked[0].name} (score: ${ranked[0].score})`);
+    }
+
+    return ranked;
   }
 
   calculateActivityScore(activity) {
@@ -262,12 +345,29 @@ Focus on quality over quantity. Make recommendations that would genuinely enhanc
   }
 
   async generateRecommendations(results, task) {
+    const startTime = Date.now();
+    console.log('🎯 ActivityAgent.generateRecommendations: Starting');
+    console.log(`   Input: ${results ? results.length : 0} results`);
+    console.log('   Task criteria:', {
+      destination: task.criteria?.destination,
+      interests: task.criteria?.interests,
+      budget: task.criteria?.budget
+    });
+
     try {
+      console.log('🔍 ActivityAgent.generateRecommendations: Calling parent class method...');
+      const aiStartTime = Date.now();
+
       // Use parent class method first
       const aiResponse = await super.generateRecommendations(results, task);
-      
+
+      const aiDuration = Date.now() - aiStartTime;
+      console.log(`⏱️ ActivityAgent.generateRecommendations: Parent method completed in ${aiDuration}ms`);
+      console.log('   Response type:', typeof aiResponse);
+      console.log('   Response keys:', aiResponse ? Object.keys(aiResponse) : 'null');
+
       // Enhance with activity-specific metadata
-      return {
+      const enhanced = {
         ...aiResponse,
         metadata: {
           ...aiResponse.metadata,
@@ -283,11 +383,20 @@ Focus on quality over quantity. Make recommendations that would genuinely enhanc
           }
         }
       };
+
+      const totalDuration = Date.now() - startTime;
+      console.log(`✅ ActivityAgent.generateRecommendations: Completed successfully in ${totalDuration}ms`);
+
+      return enhanced;
     } catch (error) {
-      console.warn(`ActivityAgent generateRecommendations failed: ${error.message}. Using direct fallback.`);
-      
+      const totalDuration = Date.now() - startTime;
+      console.error(`❌ ActivityAgent.generateRecommendations: Failed after ${totalDuration}ms`);
+      console.error(`   Error: ${error.message}`);
+      console.error(`   Stack: ${error.stack}`);
+      console.warn(`⚠️ ActivityAgent generateRecommendations failed: ${error.message}. Using direct fallback.`);
+
       // Direct fallback structure when AI fails
-      return {
+      const fallback = {
         recommendations: results || [],
         confidence: 60,
         reasoning: 'Using fallback recommendations due to AI service unavailability. These are curated activities based on your criteria.',
@@ -304,6 +413,9 @@ Focus on quality over quantity. Make recommendations that would genuinely enhanc
           }
         }
       };
+
+      console.log(`📊 ActivityAgent.generateRecommendations: Returning fallback with ${fallback.recommendations.length} items`);
+      return fallback;
     }
   }
 

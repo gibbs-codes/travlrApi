@@ -1092,16 +1092,63 @@ export class TripOrchestrator extends BaseAgent {
   }
   
   updateBudgetTracking(agentName, recommendations) {
-    if (!recommendations || recommendations.length === 0) return;
-    
-    const totalSpent = recommendations.reduce((sum, rec) => {
-      return sum + (rec.price || rec.cost || 0);
-    }, 0);
-    
-    this.executionContext.budgetTracking.spent[agentName] = totalSpent;
-    
-    const allocated = this.executionContext.budgetTracking.allocated[agentName] || 0;
-    this.executionContext.budgetTracking.remaining[agentName] = Math.max(0, allocated - totalSpent);
+    try {
+      // Ensure budgetTracking exists
+      if (!this.executionContext?.budgetTracking) {
+        console.warn('⚠️  Budget tracking not initialized, skipping update');
+        return;
+      }
+
+      // Ensure estimatedSpend exists
+      if (!this.executionContext.budgetTracking.estimatedSpend) {
+        this.executionContext.budgetTracking.estimatedSpend = {
+          flight: 0,
+          accommodation: 0,
+          activity: 0,
+          restaurant: 0,
+          transportation: 0
+        };
+      }
+
+      if (!recommendations || recommendations.length === 0) {
+        console.log(`💰 ${agentName}: No recommendations to track`);
+        return;
+      }
+
+      // Calculate estimate for this agent - handle different price structures
+      const totalEstimate = recommendations.reduce((sum, rec) => {
+        // Try multiple price formats
+        const price = rec?.price?.amount || rec?.price || rec?.cost || 0;
+        return sum + (typeof price === 'number' ? price : 0);
+      }, 0);
+
+      // Update the specific agent's estimate
+      this.executionContext.budgetTracking.estimatedSpend[agentName] = totalEstimate;
+
+      // Recalculate total
+      const allEstimates = Object.values(this.executionContext.budgetTracking.estimatedSpend);
+      this.executionContext.budgetTracking.totalEstimated = allEstimates.reduce(
+        (sum, val) => sum + (val || 0),
+        0
+      );
+
+      // Log the update
+      const userBudgetForAgent = this.executionContext.budgetTracking.userBudgetByCategory?.[agentName];
+      console.log(`💰 Budget tracking updated for ${agentName}:`, {
+        recommendationCount: recommendations.length,
+        agentEstimate: `$${totalEstimate.toFixed(2)}`,
+        userBudget: userBudgetForAgent ? `$${userBudgetForAgent}` : 'not set',
+        totalEstimated: `$${this.executionContext.budgetTracking.totalEstimated.toFixed(2)}`,
+        userBudgetTotal: this.executionContext.budgetTracking.userBudgetTotal
+          ? `$${this.executionContext.budgetTracking.userBudgetTotal}`
+          : 'not set'
+      });
+
+    } catch (error) {
+      console.error(`❌ Error updating budget tracking for ${agentName}:`, error.message);
+      console.error('   Stack:', error.stack);
+      // Don't throw - budget tracking is informational, shouldn't break the trip
+    }
   }
 
   // Enhanced Trip Plan Synthesis

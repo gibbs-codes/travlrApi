@@ -375,6 +375,12 @@ export class TripOrchestrator extends BaseAgent {
       currency = 'USD';
     }
 
+    // Log currency mismatch if not USD
+    const requestedCurrency = rawRecommendation?.requestedCurrency || 'USD';
+    if (currency !== requestedCurrency && safeAmount > 0) {
+      console.warn(`⚠️ ${agentName} currency mismatch: expected ${requestedCurrency}, got ${currency} for ${rawRecommendation.name || 'item'} (${safeAmount} ${currency})`);
+    }
+
     const rawPriceType = rawRecommendation?.price?.priceType;
     const allowedPriceTypes = ['per_person', 'per_night', 'per_room', 'per_group', 'total'];
     const priceType = allowedPriceTypes.includes(rawPriceType) ? rawPriceType : this.getPriceType(agentName);
@@ -382,7 +388,9 @@ export class TripOrchestrator extends BaseAgent {
     return {
       amount: safeAmount,
       currency,
-      priceType
+      priceType,
+      originalCurrency: rawRecommendation?.currency || rawRecommendation?.price?.currency, // Track original
+      requestedCurrency // Track what was requested
     };
   }
 
@@ -672,6 +680,10 @@ export class TripOrchestrator extends BaseAgent {
     // Budget is optional - only use if provided and greater than 0
     const hasBudget = tripRequest.budget && tripRequest.budget.total && tripRequest.budget.total > 0;
 
+    // Standardize currency - default to USD
+    const currency = (tripRequest.budget?.currency || 'USD').toString().toUpperCase();
+    console.log(`💱 Trip currency set to: ${currency}`);
+
     const baseCriteria = {
       // Core trip details
       tripId: this.tripId,
@@ -680,6 +692,9 @@ export class TripOrchestrator extends BaseAgent {
       departureDate: tripRequest.departureDate,
       returnDate: tripRequest.returnDate,
       travelers: tripRequest.travelers || 1,
+
+      // Currency standardization - ALWAYS pass to all agents
+      currency,
 
       // Budget information (optional - 0 means no budget limit)
       totalBudget: hasBudget ? tripRequest.budget.total : undefined,

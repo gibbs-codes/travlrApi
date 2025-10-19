@@ -216,10 +216,16 @@ class RapidApiHotelService {
         rating = ratingMap[hotel.review_score_word.toLowerCase()] || 7.0;
       }
 
+      // Construct booking URL - prefer direct URL if available, otherwise construct Booking.com link
+      const hotelId = hotel.hotel_id?.toString();
+      const bookingUrl = hotel.url ||
+        (hotelId ? `https://www.booking.com/hotel/${hotelId}.html` : null);
+
       return {
-        id: hotel.hotel_id?.toString() || `hotel_${Math.random().toString(36)}`,
+        id: hotelId || `hotel_${Math.random().toString(36)}`,
         name: hotel.hotel_name || hotel.name || 'Hotel Name Not Available',
         type: 'hotel',
+        bookingUrl, // Add booking link
         location: {
           address: hotel.address || hotel.hotel_name || 'Address not available',
           city: hotel.city || destination,

@@ -18,7 +18,7 @@ export class FlightAgent extends TripPlanningAgent {
   async search(criteria) {
     try {
       console.log('FlightAgent searching with criteria:', criteria);
-      
+
       // Validate required criteria
       if (!criteria.origin || !criteria.destination || !criteria.departureDate) {
         throw new Error('Missing required flight search criteria: origin, destination, departureDate');
@@ -31,7 +31,8 @@ export class FlightAgent extends TripPlanningAgent {
         departureDate: criteria.departureDate,
         returnDate: criteria.returnDate,
         adults: criteria.travelers || 1,
-        maxResults: this.searchConfig.maxResults
+        maxResults: this.searchConfig.maxResults,
+        currency: criteria.currency || 'USD' // Pass currency preference
       };
 
       const flights = await amadeusService.searchFlights(searchParams);
@@ -248,17 +249,24 @@ export class FlightAgent extends TripPlanningAgent {
 
     const departureAirport = flight?.departure?.airport || flight?.origin;
     const arrivalAirport = flight?.arrival?.airport || flight?.destination;
+    const departureDate = flight?.departure?.date;
 
     const name = flight?.name ||
       `${flight?.airline || 'Flight'} ${flight?.flightNumber || flight?.id || position + 1}`.trim();
 
     const description = flight?.description ||
-      `Flight from ${departureAirport || 'origin'} to ${arrivalAirport || 'destination'} on ${flight?.departure?.date || 'selected date'}.`;
+      `Flight from ${departureAirport || 'origin'} to ${arrivalAirport || 'destination'} on ${departureDate || 'selected date'}.`;
+
+    // Construct Google Flights deep link for booking
+    const bookingUrl = departureAirport && arrivalAirport && departureDate
+      ? `https://www.google.com/flights?q=flights+${departureAirport}+to+${arrivalAirport}+${departureDate}`
+      : null;
 
     return {
       ...flight,
       name,
       description,
+      bookingUrl, // Add booking link
       price: {
         amount: safeAmount,
         currency,

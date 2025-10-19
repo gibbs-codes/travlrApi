@@ -264,7 +264,8 @@ class AmadeusService {
         departureDate,
         returnDate,
         adults = 1,
-        maxResults = 10
+        maxResults = 10,
+        currency = 'USD' // Allow currency preference
       } = searchParams;
 
       // Convert city names to airport codes
@@ -272,7 +273,8 @@ class AmadeusService {
       const destinationCode = await this.getCityAirportCode(destination);
 
       console.log(`Converted: ${origin} → ${originCode}, ${destination} → ${destinationCode}`);
-      console.log('Searching flights:', { origin: originCode, destination: destinationCode, departureDate });
+      console.log('Searching flights:', { origin: originCode, destination: destinationCode, departureDate, currency });
+      console.log(`💱 Requesting flight prices in: ${currency}`);
 
       const response = await this.amadeus.shopping.flightOffersSearch.get({
         originLocationCode: originCode,
@@ -280,10 +282,11 @@ class AmadeusService {
         departureDate: departureDate,
         returnDate: returnDate,
         adults: adults,
-        max: maxResults
+        max: maxResults,
+        currencyCode: currency // Amadeus API parameter for currency
       });
 
-      return this.transformFlightData(response.data);
+      return this.transformFlightData(response.data, currency);
     } catch (error) {
       console.error('Amadeus flight search error:', error);
 
@@ -321,11 +324,19 @@ class AmadeusService {
     }
   }
 
-  transformFlightData(amadeusData) {
-    return amadeusData.map(offer => {
+  transformFlightData(amadeusData, requestedCurrency = 'USD') {
+    const flights = amadeusData.map(offer => {
       const outbound = offer.itineraries[0];
       const firstSegment = outbound.segments[0];
       const lastSegment = outbound.segments[outbound.segments.length - 1];
+
+      const price = parseFloat(offer.price.total);
+      const returnedCurrency = (offer.price.currency || 'USD').toUpperCase();
+
+      // Warn if currency doesn't match requested
+      if (returnedCurrency !== requestedCurrency) {
+        console.warn(`⚠️ Currency mismatch for flight ${offer.id}: expected ${requestedCurrency}, got ${returnedCurrency}. Price: ${price}`);
+      }
 
       return {
         id: offer.id,
@@ -333,22 +344,23 @@ class AmadeusService {
         flightNumber: firstSegment.number,
         departure: {
           airport: firstSegment.departure.iataCode,
-          time: new Date(firstSegment.departure.at).toLocaleTimeString('en-US', { 
-            hour: '2-digit', 
-            minute: '2-digit' 
+          time: new Date(firstSegment.departure.at).toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit'
           }),
           date: new Date(firstSegment.departure.at).toISOString().split('T')[0]
         },
         arrival: {
           airport: lastSegment.arrival.iataCode,
-          time: new Date(lastSegment.arrival.at).toLocaleTimeString('en-US', { 
-            hour: '2-digit', 
-            minute: '2-digit' 
+          time: new Date(lastSegment.arrival.at).toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit'
           }),
           date: new Date(lastSegment.arrival.at).toISOString().split('T')[0]
         },
-        price: parseFloat(offer.price.total),
-        currency: offer.price.currency,
+        price,
+        currency: returnedCurrency,
+        requestedCurrency, // Track what was requested
         duration: outbound.duration,
         stops: outbound.segments.length - 1,
         class: offer.travelerPricings[0].fareDetailsBySegment[0].cabin,
@@ -356,6 +368,15 @@ class AmadeusService {
         rawData: offer // Keep for debugging
       };
     });
+
+    // Log currency summary
+    const currencyCounts = flights.reduce((acc, flight) => {
+      acc[flight.currency] = (acc[flight.currency] || 0) + 1;
+      return acc;
+    }, {});
+    console.log(`💱 Flight currency breakdown:`, currencyCounts);
+
+    return flights;
   }
 
   async getAirportInfo(query) {

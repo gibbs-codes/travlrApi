@@ -264,7 +264,9 @@ export class RestaurantAgent extends TripPlanningAgent {
         rating: restaurant.rating,
         priceRange: restaurant.priceRange,
         cuisine: restaurant.cuisine,
-        hasPhotos: !!(restaurant.photos && restaurant.photos.length > 0)
+        address: restaurant.location?.address,
+        hasPhotos: !!(restaurant.photos && restaurant.photos.length > 0),
+        hasCoordinates: !!(restaurant.location?.coordinates?.lat && restaurant.location?.coordinates?.lng)
       });
 
       const recommendation = {
@@ -278,7 +280,7 @@ export class RestaurantAgent extends TripPlanningAgent {
         },
         rating: {
           score: restaurant.rating || 0,
-          reviewCount: 0,
+          reviewCount: restaurant.reviewCount || restaurant.user_ratings_total || 0,
           source: 'Google Places'
         },
         location: {
@@ -299,12 +301,15 @@ export class RestaurantAgent extends TripPlanningAgent {
         }
       };
 
-      console.log(`   Created recommendation:`, {
+      console.log(`   ✅ Created recommendation:`, {
         name: recommendation.name,
-        price: recommendation.price.amount,
-        rating: recommendation.rating.score,
+        description: recommendation.description.substring(0, 60) + '...',
+        price: `${recommendation.price.currency} ${recommendation.price.amount}`,
+        rating: `${recommendation.rating.score}/5 (${recommendation.rating.reviewCount} reviews)`,
         hasImages: recommendation.images.length > 0,
-        hasCoordinates: !!recommendation.location.coordinates
+        imageCount: recommendation.images.length,
+        hasCoordinates: !!recommendation.location.coordinates,
+        coordinates: recommendation.location.coordinates
       });
 
       return recommendation;

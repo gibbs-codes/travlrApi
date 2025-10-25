@@ -351,6 +351,21 @@ export class TripOrchestrator extends BaseAgent {
     const name = this.buildRecommendationName(agentName, rawRecommendation, location);
     const description = this.buildRecommendationDescription(agentName, rawRecommendation, normalizedPrice, normalizedRating);
 
+    // Debug logging for restaurants
+    if (agentName === 'restaurant') {
+      console.log(`🔍 Normalizing restaurant recommendation:`, {
+        rawName: rawRecommendation.name,
+        rawRating: rawRecommendation.rating?.score || rawRecommendation.rating,
+        rawPrice: rawRecommendation.price?.amount || rawRecommendation.price,
+        rawAddress: rawRecommendation.location?.address,
+        normalizedName: name,
+        normalizedRating: normalizedRating.score,
+        normalizedPrice: normalizedPrice.amount,
+        hasImages: images.length > 0,
+        imageCount: images.length
+      });
+    }
+
     return {
       agentType: agentName,
       name,
@@ -601,6 +616,12 @@ export class TripOrchestrator extends BaseAgent {
       }
       case 'accommodation':
         return rawRecommendation.name || rawRecommendation.title || 'Accommodation Option';
+      case 'restaurant':
+        return rawRecommendation.name || rawRecommendation.title || 'Restaurant';
+      case 'activity':
+        return rawRecommendation.name || rawRecommendation.title || 'Activity';
+      case 'transportation':
+        return rawRecommendation.name || rawRecommendation.title || rawRecommendation.type || 'Transportation';
       default:
         return rawRecommendation.name || rawRecommendation.title || `${agentName} recommendation`;
     }
@@ -622,6 +643,36 @@ export class TripOrchestrator extends BaseAgent {
           ? rawRecommendation.amenities.slice(0, 3).join(', ')
           : 'Essential amenities';
         return `${rawRecommendation.name || 'Accommodation'} rated ${ratingText}. Key amenities: ${amenities}. Nightly rate: ${price.currency} ${price.amount.toFixed(2)}.`;
+      }
+      case 'restaurant': {
+        const ratingText = rating.score ? `${rating.score.toFixed(1)}/5` : 'Unrated';
+        const cuisine = rawRecommendation.agentMetadata?.cuisine || rawRecommendation.cuisine || 'restaurant';
+        const address = rawRecommendation.location?.address || 'destination';
+        const priceRange = rawRecommendation.agentMetadata?.priceRange || '';
+        const priceInfo = price.amount > 0
+          ? `Average meal: ${price.currency} ${price.amount.toFixed(2)} ${price.priceType || 'per person'}`
+          : (priceRange ? `Price range: ${priceRange}` : '');
+        return `${cuisine} restaurant${address ? ` at ${address}` : ''}. Rating: ${ratingText}.${priceInfo ? ` ${priceInfo}.` : ''}`;
+      }
+      case 'activity': {
+        const ratingText = rating.score ? ` Rated ${rating.score.toFixed(1)}/5` : '';
+        const duration = rawRecommendation.agentMetadata?.duration || rawRecommendation.duration;
+        const durationText = duration ? `. Duration: ${duration}` : '';
+        const priceText = price.amount > 0 ? ` Price: ${price.currency} ${price.amount.toFixed(2)} ${price.priceType || 'per person'}` : '';
+        const description = rawRecommendation.description || rawRecommendation.summary || '';
+        return `${description}${ratingText}${durationText}.${priceText ? `${priceText}.` : ''}`.trim();
+      }
+      case 'transportation': {
+        const type = rawRecommendation.type || 'Transportation';
+        const duration = rawRecommendation.estimatedTime || rawRecommendation.duration || '';
+        const distance = rawRecommendation.distance || '';
+        const provider = rawRecommendation.provider || '';
+        const parts = [type];
+        if (provider) parts.push(`via ${provider}`);
+        if (distance) parts.push(distance);
+        if (duration) parts.push(duration);
+        if (price.amount > 0) parts.push(`${price.currency} ${price.amount.toFixed(2)}`);
+        return parts.join('. ') + '.';
       }
       default:
         return rawRecommendation.description ||

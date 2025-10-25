@@ -1099,8 +1099,8 @@ export class TripOrchestrator extends BaseAgent {
         return;
       }
 
-      // Ensure estimatedSpend exists
-      if (!this.executionContext.budgetTracking.estimatedSpend) {
+      // Ensure estimatedSpend exists - use null-safe initialization
+      if (!this.executionContext.budgetTracking.estimatedSpend || typeof this.executionContext.budgetTracking.estimatedSpend !== 'object') {
         this.executionContext.budgetTracking.estimatedSpend = {
           flight: 0,
           accommodation: 0,
@@ -1108,10 +1108,17 @@ export class TripOrchestrator extends BaseAgent {
           restaurant: 0,
           transportation: 0
         };
+        console.log('💰 Initialized estimatedSpend object');
       }
 
       if (!recommendations || recommendations.length === 0) {
         console.log(`💰 ${agentName}: No recommendations to track`);
+        return;
+      }
+
+      // Validate agentName
+      if (!agentName || typeof agentName !== 'string') {
+        console.warn('⚠️  Invalid agentName for budget tracking:', agentName);
         return;
       }
 
@@ -1122,11 +1129,24 @@ export class TripOrchestrator extends BaseAgent {
         return sum + (typeof price === 'number' ? price : 0);
       }, 0);
 
-      // Update the specific agent's estimate
-      this.executionContext.budgetTracking.estimatedSpend[agentName] = totalEstimate;
+      // Safely update the specific agent's estimate
+      // Ensure the estimatedSpend object hasn't been corrupted
+      if (this.executionContext.budgetTracking.estimatedSpend && typeof this.executionContext.budgetTracking.estimatedSpend === 'object') {
+        this.executionContext.budgetTracking.estimatedSpend[agentName] = totalEstimate;
+      } else {
+        console.error('❌ estimatedSpend object was corrupted, reinitializing');
+        this.executionContext.budgetTracking.estimatedSpend = {
+          flight: 0,
+          accommodation: 0,
+          activity: 0,
+          restaurant: 0,
+          transportation: 0,
+          [agentName]: totalEstimate
+        };
+      }
 
       // Recalculate total
-      const allEstimates = Object.values(this.executionContext.budgetTracking.estimatedSpend);
+      const allEstimates = Object.values(this.executionContext.budgetTracking.estimatedSpend || {});
       this.executionContext.budgetTracking.totalEstimated = allEstimates.reduce(
         (sum, val) => sum + (val || 0),
         0
@@ -1147,6 +1167,13 @@ export class TripOrchestrator extends BaseAgent {
     } catch (error) {
       console.error(`❌ Error updating budget tracking for ${agentName}:`, error.message);
       console.error('   Stack:', error.stack);
+      console.error('   Context state:', {
+        hasExecutionContext: !!this.executionContext,
+        hasBudgetTracking: !!this.executionContext?.budgetTracking,
+        hasEstimatedSpend: !!this.executionContext?.budgetTracking?.estimatedSpend,
+        agentName,
+        recommendationsCount: recommendations?.length
+      });
       // Don't throw - budget tracking is informational, shouldn't break the trip
     }
   }

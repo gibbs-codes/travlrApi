@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import travelRoutes from './routes/travel.js';
 import tripRoutes from './routes/trip.js';
 import sharingRoutes from './routes/sharing.js';
+import recommendationRoutes from './routes/recommendations.js';
 import databaseService from './services/database.js';
 
 const app = express();
@@ -38,6 +39,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use('/api/travel', travelRoutes);
 app.use('/api/trip', tripRoutes);
+app.use('/api/recommendations', recommendationRoutes);
 app.use('/api', sharingRoutes);
 
 app.get('/health', (_req, res) => {

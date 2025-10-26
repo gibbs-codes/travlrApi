@@ -475,34 +475,6 @@ const tripSchema = new mongoose.Schema({
           },
           stack: String
         }]
-      },
-      transportation: {
-        status: {
-          type: String,
-          enum: ['pending', 'running', 'completed', 'failed', 'skipped'],
-          default: 'pending'
-        },
-        startedAt: Date,
-        completedAt: Date,
-        duration: Number,
-        confidence: {
-          type: Number,
-          min: 0,
-          max: 1
-        },
-        recommendationCount: {
-          type: Number,
-          min: 0,
-          default: 0
-        },
-        errors: [{
-          message: String,
-          timestamp: {
-            type: Date,
-            default: Date.now
-          },
-          stack: String
-        }]
       }
     },
     metadata: {

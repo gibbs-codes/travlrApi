@@ -206,8 +206,7 @@ export const createTrip = async (req, res) => {
           flight: { status: 'pending' },
           accommodation: { status: 'pending' },
           activity: { status: 'pending' },
-          restaurant: { status: 'pending' },
-          transportation: { status: 'pending' }
+          restaurant: { status: 'pending' }
         }
       }
     };
@@ -215,25 +214,46 @@ export const createTrip = async (req, res) => {
     const trip = await Trip.create(tripData);
     console.log(`Created trip ${trip.tripId} for ${destination}`);
 
-    // Response with trip info
+    // Calculate estimated completion time (assuming 30-60 seconds per agent, 5 agents)
+    const estimatedSeconds = triggerOrchestrator ? 180 : 0; // 3 minutes for all agents
+    const estimatedCompletion = triggerOrchestrator
+      ? new Date(Date.now() + estimatedSeconds * 1000).toISOString()
+      : null;
+
+    // Build simplified response - no recommendations included
     const responseData = {
       tripId: trip.tripId,
-      status: trip.status,
       title: trip.title,
-      destination: trip.destination.name,
-      origin: trip.origin.name,
-      dates: trip.dates,
-      travelers: trip.travelers,
+      status: trip.status,
+      destination: {
+        name: trip.destination.name,
+        country: trip.destination.country || null
+      },
+      origin: {
+        name: trip.origin.name,
+        country: trip.origin.country || null
+      },
+      dates: {
+        departureDate: trip.dates.departureDate.toISOString().split('T')[0],
+        returnDate: trip.dates.returnDate ? trip.dates.returnDate.toISOString().split('T')[0] : null,
+        duration: trip.dates.duration || null
+      },
+      travelers: {
+        count: trip.travelers.count,
+        adults: trip.travelers.adults,
+        children: trip.travelers.children,
+        infants: trip.travelers.infants
+      },
       agentExecution: {
         status: trip.agentExecution.status,
-        agents: trip.agentExecution.agents
+        estimatedCompletion
       }
     };
 
     res.status(201).json(formatSuccess(
       responseData,
-      triggerOrchestrator 
-        ? 'Trip created successfully, planning in progress'
+      triggerOrchestrator
+        ? 'Trip created successfully. Generating recommendations...'
         : 'Trip draft created successfully'
     ));
 
@@ -385,11 +405,11 @@ export const rerunAgents = async (req, res) => {
     }
 
     // Determine agents to rerun
-    const agentsToRerun = agents.length > 0 ? agents : 
-      ['flight', 'accommodation', 'activity', 'restaurant', 'transportation'];
-    
-    const invalidAgents = agentsToRerun.filter(agent => 
-      !['flight', 'accommodation', 'activity', 'restaurant', 'transportation'].includes(agent)
+    const agentsToRerun = agents.length > 0 ? agents :
+      ['flight', 'accommodation', 'activity', 'restaurant'];
+
+    const invalidAgents = agentsToRerun.filter(agent =>
+      !['flight', 'accommodation', 'activity', 'restaurant'].includes(agent)
     );
     
     if (invalidAgents.length > 0) {
@@ -485,7 +505,7 @@ export const rerunAgents = async (req, res) => {
 // Helper method to generate execution timeline
 export const generateExecutionTimeline = (execution) => {
   const timeline = [];
-  const agentNames = ['flight', 'accommodation', 'activity', 'restaurant', 'transportation'];
+  const agentNames = ['flight', 'accommodation', 'activity', 'restaurant'];
   
   if (execution.startedAt) {
     timeline.push({

@@ -3,7 +3,6 @@ import { FlightAgent } from './flightAgent.js';
 import { AccommodationAgent } from './accommodationAgent.js';
 import { ActivityAgent } from './activityAgent.js';
 import { RestaurantAgent } from './restaurantAgent.js';
-import { TransportationAgent } from './transportationAgent.js';
 import { Trip, Recommendation } from '../models/index.js';
 import databaseService from '../services/database.js';
 import geographicService from '../services/geographicService.js';
@@ -34,8 +33,7 @@ export class TripOrchestrator extends BaseAgent {
       flight: new FlightAgent(aiConfig),
       accommodation: new AccommodationAgent(aiConfig),
       activity: new ActivityAgent(aiConfig),
-      restaurant: new RestaurantAgent(aiConfig),
-      transportation: new TransportationAgent(aiConfig)
+      restaurant: new RestaurantAgent(aiConfig)
     };
 
     // Define execution phases with dependencies
@@ -60,14 +58,6 @@ export class TripOrchestrator extends BaseAgent {
         parallel: false,
         dependencies: ['accommodation', 'flight'],
         description: 'Plan activities and dining based on hotel location'
-      },
-      {
-        phase: 'validation',
-        agents: ['transportation'],
-        parallel: false,
-        dependencies: ['accommodation', 'flight', 'activity', 'restaurant'],
-        description: 'Transportation validation (not shown in UI yet)',
-        uiEnabled: false  // Flag that this isn't displayed yet
       }
     ];
 
@@ -83,8 +73,7 @@ export class TripOrchestrator extends BaseAgent {
         flight: [],
         accommodation: [],
         activity: [],
-        restaurant: [],
-        transportation: []
+        restaurant: []
       },
       itinerary: [],
       alternatives: [],
@@ -620,8 +609,6 @@ export class TripOrchestrator extends BaseAgent {
         return rawRecommendation.name || rawRecommendation.title || 'Restaurant';
       case 'activity':
         return rawRecommendation.name || rawRecommendation.title || 'Activity';
-      case 'transportation':
-        return rawRecommendation.name || rawRecommendation.title || rawRecommendation.type || 'Transportation';
       default:
         return rawRecommendation.name || rawRecommendation.title || `${agentName} recommendation`;
     }
@@ -662,18 +649,6 @@ export class TripOrchestrator extends BaseAgent {
         const description = rawRecommendation.description || rawRecommendation.summary || '';
         return `${description}${ratingText}${durationText}.${priceText ? `${priceText}.` : ''}`.trim();
       }
-      case 'transportation': {
-        const type = rawRecommendation.type || 'Transportation';
-        const duration = rawRecommendation.estimatedTime || rawRecommendation.duration || '';
-        const distance = rawRecommendation.distance || '';
-        const provider = rawRecommendation.provider || '';
-        const parts = [type];
-        if (provider) parts.push(`via ${provider}`);
-        if (distance) parts.push(distance);
-        if (duration) parts.push(duration);
-        if (price.amount > 0) parts.push(`${price.currency} ${price.amount.toFixed(2)}`);
-        return parts.join('. ') + '.';
-      }
       default:
         return rawRecommendation.description ||
           rawRecommendation.summary ||
@@ -694,10 +669,9 @@ export class TripOrchestrator extends BaseAgent {
   getPriceType(agentName) {
     const priceTypes = {
       flight: 'total',
-      accommodation: 'per_night', 
+      accommodation: 'per_night',
       activity: 'per_person',
-      restaurant: 'per_person',
-      transportation: 'per_group'
+      restaurant: 'per_person'
     };
     return priceTypes[agentName] || 'per_person';
   }
@@ -756,7 +730,6 @@ export class TripOrchestrator extends BaseAgent {
         accommodation: tripRequest.budget.accommodation,
         activity: tripRequest.budget.activity,
         restaurant: tripRequest.budget.restaurant,
-        transportation: tripRequest.budget.transportation,
         currency: currency
       } : null,
 
@@ -781,11 +754,6 @@ export class TripOrchestrator extends BaseAgent {
       priceRange: tripRequest.preferences?.diningBudget || '$$',
       features: tripRequest.preferences?.restaurantFeatures,
 
-      // Transportation criteria (don't set maxCost if budget is 0 or undefined)
-      transportTypes: tripRequest.preferences?.transportModes || ['rideshare', 'public'],
-      maxCost: (tripRequest.budget?.transportation && tripRequest.budget.transportation > 0) ? tripRequest.budget.transportation : undefined,
-      minCapacity: tripRequest.travelers || 1,
-
       // Context for dependent agents
       executionContext: this.executionContext
     };
@@ -808,15 +776,13 @@ export class TripOrchestrator extends BaseAgent {
         flight: criteria.budgetInfo.flight || null,
         accommodation: criteria.budgetInfo.accommodation || null,
         activity: criteria.budgetInfo.activity || null,
-        restaurant: criteria.budgetInfo.restaurant || null,
-        transportation: criteria.budgetInfo.transportation || null
+        restaurant: criteria.budgetInfo.restaurant || null
       } : null,
       estimatedSpend: {
         flight: 0,
         accommodation: 0,
         activity: 0,
-        restaurant: 0,
-        transportation: 0
+        restaurant: 0
       },
       totalEstimated: 0,
       note: 'Budget is for user reference only - not enforced by agents',
@@ -836,7 +802,7 @@ export class TripOrchestrator extends BaseAgent {
     const executedAgents = new Set();
     
     console.log('Starting smart agent execution with dependencies...');
-    console.log('📋 Execution order: accommodation → flights → experiences → transportation');
+    console.log('📋 Execution order: accommodation → flights → experiences (activities & restaurants)');
 
     for (const phase of this.executionPhases) {
       console.log(`\n🔹 Executing phase: ${phase.description}`);
@@ -1018,16 +984,8 @@ export class TripOrchestrator extends BaseAgent {
           enhanced.hotelLocation = this.executionContext.hotelLocation;
         }
         break;
-        
-      case 'transportation':
-        // Validate entire trip feasibility
-        enhanced.hotelLocation = this.executionContext.hotelLocation;
-        enhanced.activityLocations = this.executionContext.selectedActivities;
-        enhanced.restaurantLocations = [];
-        enhanced.validateFeasibility = true;
-        break;
     }
-    
+
     return enhanced;
   }
   
@@ -1156,8 +1114,7 @@ export class TripOrchestrator extends BaseAgent {
           flight: 0,
           accommodation: 0,
           activity: 0,
-          restaurant: 0,
-          transportation: 0
+          restaurant: 0
         };
         console.log('💰 Initialized estimatedSpend object');
       }
@@ -1191,7 +1148,6 @@ export class TripOrchestrator extends BaseAgent {
           accommodation: 0,
           activity: 0,
           restaurant: 0,
-          transportation: 0,
           [agentName]: totalEstimate
         };
       }
@@ -1325,10 +1281,8 @@ export class TripOrchestrator extends BaseAgent {
         return recommendations.slice(0, 3).reduce((sum, activity) => 
           sum + ((activity.price || 0) * (criteria.travelers || 1)), 0);
       case 'restaurant':
-        return recommendations.slice(0, 3).reduce((sum, restaurant) => 
+        return recommendations.slice(0, 3).reduce((sum, restaurant) =>
           sum + ((restaurant.averageMeal || restaurant.price || 0) * (criteria.travelers || 1)), 0);
-      case 'transportation':
-        return (topRec.estimatedCost || topRec.price || 0) * 2; // Round trip
       default:
         return topRec.price || 0;
     }
@@ -1424,10 +1378,9 @@ export class TripOrchestrator extends BaseAgent {
       flight: 'critical - trip cannot proceed without flights',
       accommodation: 'critical - lodging required for trip',
       activity: 'moderate - reduces trip experience but not essential',
-      restaurant: 'low - dining options available elsewhere',
-      transportation: 'moderate - may affect trip efficiency'
+      restaurant: 'low - dining options available elsewhere'
     };
-    
+
     return impacts[agentName] || 'unknown impact';
   }
   
@@ -1593,13 +1546,12 @@ Focus on practical, actionable insights for the traveler.
     let totalConfidence = 0;
     let weightedScore = 0;
     
-    // Agent weights based on importance
+    // Agent weights based on importance (normalized without transportation)
     const agentWeights = {
-      flight: 0.25,
-      accommodation: 0.25,
-      activity: 0.20,
-      restaurant: 0.15,
-      transportation: 0.15
+      flight: 0.30,
+      accommodation: 0.30,
+      activity: 0.25,
+      restaurant: 0.15
     };
     
     Object.entries(tripPlan.recommendations).forEach(([agentType, recs]) => {

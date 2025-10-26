@@ -42,7 +42,7 @@ export class ActivityAgent extends TripPlanningAgent {
       {
         id: 'ACT001',
         name: 'City Walking Tour',
-        description: 'Explore the historic downtown area with a local guide',
+        description: 'Explore the historic downtown area with a local guide. Learn about the city\'s rich history, architecture, and hidden gems.',
         category: 'cultural',
         duration: '3 hours',
         price: 45,
@@ -53,7 +53,7 @@ export class ActivityAgent extends TripPlanningAgent {
       {
         id: 'ACT002',
         name: 'Food Market Experience',
-        description: 'Taste local specialties and learn about regional cuisine',
+        description: 'Taste local specialties and learn about regional cuisine. Visit artisan food stalls and meet local producers.',
         category: 'food',
         duration: '2.5 hours',
         price: 65,
@@ -64,7 +64,7 @@ export class ActivityAgent extends TripPlanningAgent {
       {
         id: 'ACT003',
         name: 'Mountain Hiking Adventure',
-        description: 'Challenging hike with scenic views and wildlife spotting',
+        description: 'Challenging hike with scenic views and wildlife spotting. Experience breathtaking landscapes and natural beauty.',
         category: 'adventure',
         duration: '6 hours',
         price: 80,
@@ -75,12 +75,56 @@ export class ActivityAgent extends TripPlanningAgent {
       {
         id: 'ACT004',
         name: 'Art Museum Pass',
-        description: 'Access to three major art museums in the city',
+        description: 'Access to three major art museums in the city. Discover world-class collections and temporary exhibitions.',
         category: 'art',
         duration: 'self-paced',
         price: 25,
         rating: 4.3,
         location: 'Museum District',
+        bookingRequired: false
+      },
+      {
+        id: 'ACT005',
+        name: 'Local Market Shopping Tour',
+        description: 'Browse colorful markets and shop for unique souvenirs. Interact with local vendors and learn bargaining techniques.',
+        category: 'shopping',
+        duration: '2 hours',
+        price: 30,
+        rating: 4.5,
+        location: 'Old Town Market Square',
+        bookingRequired: false
+      },
+      {
+        id: 'ACT006',
+        name: 'Sunset Boat Cruise',
+        description: 'Enjoy stunning views from the water as the sun sets. Includes complimentary drinks and snacks.',
+        category: 'entertainment',
+        duration: '2 hours',
+        price: 55,
+        rating: 4.7,
+        location: 'Harbor Marina',
+        bookingRequired: true
+      },
+      {
+        id: 'ACT007',
+        name: 'Historical Landmark Tour',
+        description: 'Visit iconic historical sites with expert commentary. Skip-the-line access to major attractions included.',
+        category: 'historical',
+        duration: '4 hours',
+        price: 70,
+        rating: 4.6,
+        location: 'Historic City Center',
+        bookingRequired: true
+      },
+      {
+        id: 'ACT008',
+        name: 'Park Picnic & Leisure',
+        description: 'Relax in beautiful green spaces perfect for a casual afternoon. Great for families and those seeking a slower pace.',
+        category: 'nature',
+        duration: 'flexible',
+        price: 0,
+        rating: 4.4,
+        location: 'Central Park',
         bookingRequired: false
       }
     ];
@@ -185,9 +229,12 @@ export class ActivityAgent extends TripPlanningAgent {
         console.log(`✅ ActivityAgent.search: Completed successfully in ${totalDuration}ms`);
         return sanitized;
       } else {
-        const errorMsg = `Invalid AI response format. Expected array of recommendations, got: ${typeof response}`;
-        console.error(`❌ ActivityAgent.search: ${errorMsg}`);
-        throw new Error(errorMsg);
+        console.error(`❌ ActivityAgent.search: AI returned empty or invalid recommendations`);
+        console.warn('   Falling back to mock activities immediately');
+
+        const mockData = this.getMockActivities(criteria);
+        console.log(`📊 ActivityAgent.search: Returning ${mockData.length} mock activities as fallback`);
+        return mockData;
       }
     } catch (error) {
       const totalDuration = Date.now() - startTime;
@@ -260,6 +307,7 @@ Focus on quality over quantity. Make recommendations that would genuinely enhanc
       destination: criteria.destination
     });
 
+    // First try to filter by criteria
     const filtered = this.mockActivities.filter(activity => {
       if (criteria.budget && activity.price > criteria.budget) {
         console.log(`   ❌ Filtered out ${activity.name}: price ${activity.price} > budget ${criteria.budget}`);
@@ -278,6 +326,15 @@ Focus on quality over quantity. Make recommendations that would genuinely enhanc
       console.log(`   ✅ Included ${activity.name}`);
       return true;
     });
+
+    // FALLBACK: If filtering returns nothing, return at least 3 activities
+    if (filtered.length === 0) {
+      console.warn('⚠️ ActivityAgent.getMockActivities: Filtering returned 0 results!');
+      console.warn('   Returning first 3 mock activities as guaranteed fallback');
+      const fallbackActivities = this.mockActivities.slice(0, 3);
+      console.log(`📊 ActivityAgent.getMockActivities: Returning ${fallbackActivities.length} fallback activities`);
+      return fallbackActivities;
+    }
 
     console.log(`📊 ActivityAgent.getMockActivities: Returning ${filtered.length}/${this.mockActivities.length} activities`);
     return filtered;

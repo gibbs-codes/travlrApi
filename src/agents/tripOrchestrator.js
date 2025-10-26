@@ -114,20 +114,26 @@ export class TripOrchestrator extends BaseAgent {
         successful: agentResults.filter(r => r.success).length,
         failed: agentResults.filter(r => !r.success).length
       });
-      
+
       // Synthesize results with geographic clustering
       const tripPlan = await this.synthesizeEnhancedTripPlan(agentResults, criteria);
-      
+
       // Generate final recommendations with enhanced business logic
       const finalPlan = await this.generateEnhancedRecommendations(tripPlan, criteria);
 
       const executionTime = Date.now() - startTime;
-      
-      // Update trip status to completed
-      await this.updateTripStatus('completed', { 
+
+      // Determine final trip status based on agent results
+      const finalStatus = await this.determineFinalTripStatus(agentResults);
+
+      // Update trip status with proper status field
+      await this.updateTripStatus('completed', {
         completedAt: new Date(),
         totalDuration: executionTime
       });
+
+      // Update the top-level trip status (recommendations_ready or failed)
+      await this.updateTopLevelTripStatus(finalStatus);
       
       return {
         success: true,
@@ -146,13 +152,16 @@ export class TripOrchestrator extends BaseAgent {
 
     } catch (error) {
       console.error('Trip orchestrator execution failed:', error);
-      
+
       // Update trip with error status
-      await this.updateTripStatus('failed', { 
+      await this.updateTripStatus('failed', {
         error: error.message,
         completedAt: new Date()
       });
-      
+
+      // Update top-level trip status to failed
+      await this.updateTopLevelTripStatus('failed');
+
       return {
         success: false,
         error: error.message,
@@ -207,7 +216,7 @@ export class TripOrchestrator extends BaseAgent {
 
   async updateAgentStatus(agentName, status, metadata = {}) {
     if (!this.tripId) return;
-    
+
     try {
       const updateData = {
         [`agentExecution.agents.${agentName}.status`]: status,
@@ -216,10 +225,73 @@ export class TripOrchestrator extends BaseAgent {
           return acc;
         }, {})
       };
-      
+
       await Trip.findByIdAndUpdate(this.tripId, updateData);
     } catch (error) {
       console.error(`Failed to update ${agentName} agent status:`, error);
+    }
+  }
+
+  /**
+   * Determine final trip status based on agent execution results
+   * - If ALL agents completed successfully (even with 0 recommendations), return 'recommendations_ready'
+   * - If ANY agent failed, return 'failed'
+   */
+  async determineFinalTripStatus(agentResults) {
+    // Load fresh trip data to check agent statuses
+    await this.ensureTripLoaded();
+
+    if (!this.trip) {
+      console.warn('Cannot determine trip status - trip not loaded');
+      return 'failed';
+    }
+
+    // Check each agent's final status in the database
+    const agentNames = ['flight', 'accommodation', 'activity', 'restaurant'];
+    const agentStatuses = agentNames.map(name => {
+      const agentStatus = this.trip.agentExecution?.agents?.[name]?.status;
+      return {
+        name,
+        status: agentStatus
+      };
+    });
+
+    console.log('📊 Final agent statuses:', agentStatuses);
+
+    // Check if any agent failed
+    const hasFailedAgent = agentStatuses.some(agent => agent.status === 'failed');
+
+    // Check if all agents completed
+    const allCompleted = agentStatuses.every(agent =>
+      agent.status === 'completed' || agent.status === 'skipped'
+    );
+
+    if (hasFailedAgent) {
+      console.warn('⚠️ One or more agents failed - marking trip as failed');
+      return 'failed';
+    }
+
+    if (allCompleted) {
+      console.log('✅ All agents completed successfully - marking trip as recommendations_ready');
+      return 'recommendations_ready';
+    }
+
+    // Default to failed if status is unclear
+    console.warn('⚠️ Agent execution status unclear - marking trip as failed');
+    return 'failed';
+  }
+
+  /**
+   * Update the top-level trip status field
+   */
+  async updateTopLevelTripStatus(status) {
+    if (!this.tripId) return;
+
+    try {
+      await Trip.findByIdAndUpdate(this.tripId, { status });
+      console.log(`✅ Updated trip status to: ${status}`);
+    } catch (error) {
+      console.error('Failed to update top-level trip status:', error);
     }
   }
 

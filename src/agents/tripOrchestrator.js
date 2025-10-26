@@ -238,8 +238,8 @@ export class TripOrchestrator extends BaseAgent {
    * - If ANY agent failed, return 'failed'
    */
   async determineFinalTripStatus(agentResults) {
-    // Load fresh trip data to check agent statuses
-    await this.ensureTripLoaded();
+    // FORCE fresh reload from database to get latest agent statuses
+    await this.loadTripFromDatabase();
 
     if (!this.trip) {
       console.warn('Cannot determine trip status - trip not loaded');

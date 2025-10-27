@@ -9,6 +9,7 @@
  * PUT    /api/trip/:tripId/select            - Update ALL recommendation selections (legacy)
  * GET    /api/trip/:tripId/status            - Real-time execution status
  * POST   /api/trip/:tripId/rerun             - Re-run ALL agents (legacy)
+ * POST   /api/trip/:tripId/agents/start      - Start specific agents after trip creation
  *
  * === MODULAR RECOMMENDATION ENDPOINTS (NEW) ===
  * GET    /api/trip/:tripId/recommendations/flights         - Get flight recommendations
@@ -40,7 +41,8 @@ import {
   getTripById,
   selectRecommendations,
   getTripStatus,
-  rerunAgents
+  rerunAgents,
+  startAgents
 } from '../controllers/tripController.js';
 
 // Import modular recommendation controllers
@@ -113,6 +115,12 @@ router.post('/:tripId/rerun',
   validateTripId,
   validateAgentRetrigger,
   asyncHandler(rerunAgents)
+);
+
+// POST /api/trip/:tripId/agents/start - Start specific agents for existing trip
+router.post('/:tripId/agents/start',
+  validateTripId,
+  asyncHandler(startAgents)
 );
 
 // === MODULAR RECOMMENDATION ENDPOINTS ===

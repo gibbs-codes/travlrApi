@@ -135,8 +135,40 @@ export const createTrip = async (req, res) => {
       interests = ['cultural', 'food'],
       createdBy = 'anonymous',
       collaboration,
-      triggerOrchestrator = true
+      triggerOrchestrator = true,
+      agentsToRun
     } = req.body;
+
+    // Validate and set agentsToRun
+    const VALID_AGENTS = ['flight', 'accommodation', 'activity', 'restaurant'];
+    let selectedAgents = agentsToRun;
+
+    if (selectedAgents) {
+      // Validate that it's an array
+      if (!Array.isArray(selectedAgents)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Validation error',
+          message: 'agentsToRun must be an array'
+        });
+      }
+
+      // Validate that all requested agents are valid
+      const invalidAgents = selectedAgents.filter(agent => !VALID_AGENTS.includes(agent));
+      if (invalidAgents.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Validation error',
+          message: `Invalid agent names: ${invalidAgents.join(', ')}. Valid agents are: ${VALID_AGENTS.join(', ')}`
+        });
+      }
+
+      // Remove duplicates
+      selectedAgents = [...new Set(selectedAgents)];
+    } else {
+      // Default to all agents if not specified
+      selectedAgents = VALID_AGENTS;
+    }
 
     // Handle collaboration data - support both direct createdBy and collaboration object
     const collaborationData = collaboration || {};
@@ -202,12 +234,22 @@ export const createTrip = async (req, res) => {
       status: triggerOrchestrator ? 'planning' : 'draft',
       agentExecution: {
         status: triggerOrchestrator ? 'pending' : 'not_started',
-        agents: {
-          flight: { status: 'pending' },
-          accommodation: { status: 'pending' },
-          activity: { status: 'pending' },
-          restaurant: { status: 'pending' }
-        }
+        agents: VALID_AGENTS.reduce((acc, agent) => {
+          // Initialize ALL 4 agents (flight, accommodation, activity, restaurant)
+          // If triggerOrchestrator is true:
+          //   - Selected agents get 'pending' status
+          //   - Unselected agents get 'skipped' status
+          // If triggerOrchestrator is false (draft mode):
+          //   - All agents get 'pending' status for future execution
+          const isSelected = selectedAgents.includes(agent);
+          acc[agent] = {
+            status: triggerOrchestrator
+              ? (isSelected ? 'pending' : 'skipped')
+              : 'pending',
+            recommendationCount: 0
+          };
+          return acc;
+        }, {})
       }
     };
 
@@ -261,7 +303,8 @@ export const createTrip = async (req, res) => {
     if (triggerOrchestrator) {
       executeOrchestratorAsync(trip._id, {
         destination, origin, departureDate, returnDate,
-        travelers: travelerInfo.count, budget, preferences, interests
+        travelers: travelerInfo.count, budget, preferences, interests,
+        agentsToRun: selectedAgents
       }).catch(error => {
         console.error(`Background orchestrator execution failed for trip ${trip._id}:`, error);
       });
@@ -551,5 +594,149 @@ export const generateExecutionTimeline = (execution) => {
   }
   
   return timeline.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+};
+
+/**
+ * Start specific agents for an existing trip
+ * POST /api/trip/:tripId/agents/start
+ */
+export const startAgents = async (req, res) => {
+  try {
+    const { tripId } = req.params;
+    const { agents, reason } = req.body;
+
+    // Validate request body
+    if (!agents || !Array.isArray(agents) || agents.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation error',
+        message: 'agents field is required and must be a non-empty array'
+      });
+    }
+
+    // Validate agent names
+    const VALID_AGENTS = ['flight', 'accommodation', 'activity', 'restaurant'];
+    const invalidAgents = agents.filter(agent => !VALID_AGENTS.includes(agent));
+    if (invalidAgents.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation error',
+        message: `Invalid agent names: ${invalidAgents.join(', ')}. Valid agents are: ${VALID_AGENTS.join(', ')}`
+      });
+    }
+
+    // Ensure database connection
+    await databaseService.connect();
+
+    // Find the trip
+    const trip = await Trip.findOne({ tripId });
+    if (!trip) {
+      return res.status(404).json({
+        success: false,
+        error: 'Not found',
+        message: `Trip with ID ${tripId} does not exist`
+      });
+    }
+
+    // Check if agents are currently executing
+    const executionStatus = trip.agentExecution?.status;
+    if (executionStatus === 'pending' || executionStatus === 'in_progress') {
+      return res.status(409).json({
+        success: false,
+        error: 'Conflict',
+        message: `Trip agents are already executing (status: ${executionStatus}). Please wait for current execution to complete.`
+      });
+    }
+
+    // Check each requested agent's status
+    const agentStatuses = {};
+    const completedAgents = [];
+    const skippedAgents = [];
+    const pendingAgents = [];
+
+    for (const agentName of agents) {
+      const agentStatus = trip.agentExecution?.agents?.[agentName]?.status;
+      agentStatuses[agentName] = agentStatus;
+
+      if (agentStatus === 'completed') {
+        completedAgents.push(agentName);
+      } else if (agentStatus === 'skipped' || !agentStatus) {
+        skippedAgents.push(agentName);
+      } else if (agentStatus === 'pending' || agentStatus === 'running') {
+        pendingAgents.push(agentName);
+      }
+    }
+
+    // Reject if any requested agents are already completed
+    if (completedAgents.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation error',
+        message: `The following agents have already completed: ${completedAgents.join(', ')}. Cannot restart completed agents.`
+      });
+    }
+
+    // Update agent statuses from skipped/undefined to pending
+    const updateFields = {};
+    for (const agentName of agents) {
+      updateFields[`agentExecution.agents.${agentName}.status`] = 'pending';
+      updateFields[`agentExecution.agents.${agentName}.updatedAt`] = new Date();
+      if (reason) {
+        updateFields[`agentExecution.agents.${agentName}.restartReason`] = reason;
+      }
+    }
+
+    // Update trip status and agent statuses
+    updateFields['status'] = 'planning';
+    updateFields['agentExecution.status'] = 'pending';
+
+    await Trip.findOneAndUpdate(
+      { tripId },
+      { $set: updateFields },
+      { new: true }
+    );
+
+    console.log(`🎯 Starting agents [${agents.join(', ')}] for trip ${tripId}`);
+    if (reason) {
+      console.log(`   Reason: ${reason}`);
+    }
+
+    // Build trip request object for orchestrator
+    const tripRequest = {
+      destination: trip.destination.name,
+      origin: trip.origin.name,
+      departureDate: trip.dates.departureDate,
+      returnDate: trip.dates.returnDate,
+      travelers: trip.travelers.count,
+      budget: trip.preferences?.budget || {},
+      preferences: trip.preferences || {},
+      interests: trip.preferences?.interests || [],
+      agentsToRun: agents
+    };
+
+    // Execute orchestrator asynchronously (don't await)
+    executeOrchestratorAsync(trip._id, tripRequest).catch(error => {
+      console.error(`Background orchestrator execution failed for trip ${trip._id}:`, error);
+    });
+
+    // Return success response immediately
+    res.status(200).json({
+      success: true,
+      data: {
+        tripId: trip.tripId,
+        startedAgents: agents,
+        status: 'planning',
+        message: 'Agents started successfully'
+      }
+    });
+
+  } catch (error) {
+    console.error('Start agents error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      message: 'Error starting agents'
+    });
+  }
 };
 

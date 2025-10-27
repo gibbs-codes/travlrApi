@@ -89,25 +89,36 @@ export class TripOrchestrator extends BaseAgent {
 
   async execute(tripRequest, tripId = null) {
     const startTime = Date.now();
-    
+
     try {
       this.activate();
-      
+
       // Set tripId and load trip if provided
       if (tripId) {
         this.tripId = tripId;
         await this.loadTripFromDatabase();
       }
-      
+
       console.log(`Starting enhanced trip planning for: ${tripRequest.destination}`);
       await this.updateTripStatus('in_progress', { startedAt: new Date() });
 
       // Extract and validate trip criteria with budget tracking
       const criteria = this.extractCriteria(tripRequest);
       this.initializeBudgetTracking(criteria);
-      
-      // Execute agents in smart dependency order
-      const agentResults = await this.executeAgentsWithDependencies(criteria);
+
+      // Determine which agents to run
+      const agentsToRun = tripRequest.agentsToRun;
+      let agentResults;
+
+      if (agentsToRun && Array.isArray(agentsToRun)) {
+        // Use selective agent execution
+        console.log(`🎯 Selective execution mode: ${agentsToRun.join(', ')}`);
+        agentResults = await this.executeSelectedAgents(agentsToRun, criteria);
+      } else {
+        // Execute all agents (backward compatibility)
+        console.log(`🎯 Full execution mode: all agents`);
+        agentResults = await this.executeAgentsWithDependencies(criteria, ['flight', 'accommodation', 'activity', 'restaurant']);
+      }
       
       console.log('Enhanced agent execution completed:', {
         totalAgents: agentResults.length,
@@ -869,15 +880,36 @@ export class TripOrchestrator extends BaseAgent {
   }
 
   // Smart Agent Execution with Dependencies
-  async executeAgentsWithDependencies(criteria) {
+  async executeAgentsWithDependencies(criteria, agentsToRun = ['flight', 'accommodation', 'activity', 'restaurant']) {
     const allResults = [];
     const executedAgents = new Set();
-    
+    const skippedAgents = new Set();
+
     console.log('Starting smart agent execution with dependencies...');
     console.log('📋 Execution order: accommodation → flights → experiences (activities & restaurants)');
 
     for (const phase of this.executionPhases) {
+      // Filter agents in this phase to only include those in agentsToRun
+      const agentsInPhase = phase.agents.filter(agent => agentsToRun.includes(agent));
+
+      // Skip phase if no agents are selected to run
+      if (agentsInPhase.length === 0) {
+        console.log(`\n⏭️  Skipping phase: ${phase.description} (no agents selected)`);
+        // Mark all agents in this phase as skipped
+        for (const agentName of phase.agents) {
+          if (!agentsToRun.includes(agentName)) {
+            skippedAgents.add(agentName);
+            await this.updateAgentStatus(agentName, 'skipped', {
+              completedAt: new Date(),
+              message: 'Agent not selected for execution'
+            });
+          }
+        }
+        continue;
+      }
+
       console.log(`\n🔹 Executing phase: ${phase.description}`);
+      console.log(`   Running agents: ${agentsInPhase.join(', ')}`);
 
       // Log UI visibility status
       if (phase.uiEnabled === false) {
@@ -886,39 +918,165 @@ export class TripOrchestrator extends BaseAgent {
 
       // Check if dependencies are met
       if (phase.dependencies) {
-        const missingDeps = phase.dependencies.filter(dep => !executedAgents.has(dep));
+        const missingDeps = phase.dependencies.filter(dep => !executedAgents.has(dep) && !skippedAgents.has(dep));
         if (missingDeps.length > 0) {
           console.warn(`⚠️ Phase ${phase.phase} missing dependencies: ${missingDeps.join(', ')}`);
           continue;
         } else {
-          console.log(`✅ Dependencies met: ${phase.dependencies.join(', ')}`);
+          const metDeps = phase.dependencies.filter(dep => executedAgents.has(dep));
+          if (metDeps.length > 0) {
+            console.log(`✅ Dependencies met: ${metDeps.join(', ')}`);
+          }
         }
       }
-      
+
       if (phase.parallel) {
         // Execute agents in parallel
-        const phaseResults = await this.executeAgentsParallel(phase.agents, criteria);
+        const phaseResults = await this.executeAgentsParallel(agentsInPhase, criteria);
         allResults.push(...phaseResults);
       } else {
         // Execute agents sequentially
-        const phaseResults = await this.executeAgentsSequential(phase.agents, criteria);
+        const phaseResults = await this.executeAgentsSequential(agentsInPhase, criteria);
         allResults.push(...phaseResults);
       }
-      
+
       // Mark agents as executed and update context
-      for (const agentName of phase.agents) {
+      for (const agentName of agentsInPhase) {
         executedAgents.add(agentName);
         const agentResult = allResults.find(r => r.name === agentName);
-        
+
         if (agentResult && agentResult.success) {
           await this.updateExecutionContext(agentName, agentResult);
         }
       }
     }
-    
+
     return allResults;
   }
-  
+
+  /**
+   * Execute only selected agents while respecting dependencies
+   * @param {string[]} agentNames - Array of agent names to execute (e.g., ['flight', 'accommodation'])
+   * @param {Object} criteria - Trip criteria
+   * @returns {Promise<Array>} Array of agent execution results
+   */
+  async executeSelectedAgents(agentNames, criteria) {
+    const allResults = [];
+    const executedAgents = new Set();
+    const skippedAgents = new Set();
+
+    // Validate agent names
+    const validAgents = ['flight', 'accommodation', 'activity', 'restaurant'];
+    const invalidAgents = agentNames.filter(name => !validAgents.includes(name));
+    if (invalidAgents.length > 0) {
+      throw new Error(`Invalid agent names: ${invalidAgents.join(', ')}. Valid agents are: ${validAgents.join(', ')}`);
+    }
+
+    console.log('Starting selective agent execution...');
+    console.log(`🎯 Requested agents: ${agentNames.join(', ')}`);
+
+    // Create filtered execution phases
+    const filteredPhases = this.executionPhases
+      .map(phase => {
+        // Filter agents in this phase to only include requested agents
+        const agentsInPhase = phase.agents.filter(agent => agentNames.includes(agent));
+
+        if (agentsInPhase.length === 0) {
+          return null; // Phase will be removed
+        }
+
+        // Check for missing dependencies
+        if (phase.dependencies) {
+          const missingDeps = phase.dependencies.filter(dep => !agentNames.includes(dep));
+          if (missingDeps.length > 0) {
+            console.warn(`⚠️  Warning: Phase '${phase.phase}' depends on [${phase.dependencies.join(', ')}] but only [${agentNames.join(', ')}] will run`);
+            console.warn(`   Missing dependencies: ${missingDeps.join(', ')}`);
+            console.warn(`   Execution will proceed but results may be suboptimal`);
+          }
+        }
+
+        return {
+          ...phase,
+          agents: agentsInPhase,
+          originalAgents: phase.agents,
+          skippedAgents: phase.agents.filter(agent => !agentNames.includes(agent))
+        };
+      })
+      .filter(Boolean); // Remove null phases
+
+    // Log execution plan
+    console.log('📋 Filtered execution phases:');
+    filteredPhases.forEach(phase => {
+      console.log(`   - ${phase.phase}: ${phase.agents.join(', ')}`);
+      if (phase.skippedAgents.length > 0) {
+        console.log(`     (skipping: ${phase.skippedAgents.join(', ')})`);
+      }
+    });
+
+    // Mark skipped agents
+    const allRequestedAgents = new Set(agentNames);
+    const allPossibleAgents = new Set(validAgents);
+    const agentsToSkip = [...allPossibleAgents].filter(agent => !allRequestedAgents.has(agent));
+
+    for (const agentName of agentsToSkip) {
+      skippedAgents.add(agentName);
+      await this.updateAgentStatus(agentName, 'skipped', {
+        completedAt: new Date(),
+        message: 'Agent not selected for execution'
+      });
+      console.log(`   ⏭️  Marked ${agentName} as skipped`);
+    }
+
+    // Execute filtered phases
+    for (const phase of filteredPhases) {
+      console.log(`\n🔹 Executing phase: ${phase.description}`);
+      console.log(`   Running agents: ${phase.agents.join(', ')}`);
+
+      // Log UI visibility status
+      if (phase.uiEnabled === false) {
+        console.log('ℹ️  Note: This phase generates data but UI display is not yet implemented');
+      }
+
+      // Check if dependencies are met (only check against executed agents)
+      if (phase.dependencies) {
+        const requestedDeps = phase.dependencies.filter(dep => agentNames.includes(dep));
+        const missingDeps = requestedDeps.filter(dep => !executedAgents.has(dep));
+
+        if (missingDeps.length > 0) {
+          console.warn(`⚠️ Phase ${phase.phase} missing dependencies: ${missingDeps.join(', ')}`);
+          console.warn(`   Skipping this phase`);
+          continue;
+        } else if (requestedDeps.length > 0) {
+          console.log(`✅ Dependencies met: ${requestedDeps.join(', ')}`);
+        }
+      }
+
+      // Execute agents in this phase
+      let phaseResults;
+      if (phase.parallel) {
+        phaseResults = await this.executeAgentsParallel(phase.agents, criteria);
+      } else {
+        phaseResults = await this.executeAgentsSequential(phase.agents, criteria);
+      }
+
+      allResults.push(...phaseResults);
+
+      // Mark agents as executed and update context
+      for (const agentName of phase.agents) {
+        executedAgents.add(agentName);
+        const agentResult = allResults.find(r => r.name === agentName);
+
+        if (agentResult && agentResult.success) {
+          await this.updateExecutionContext(agentName, agentResult);
+        }
+      }
+    }
+
+    console.log(`\n✅ Selective execution completed: ${executedAgents.size} agents executed, ${skippedAgents.size} agents skipped`);
+
+    return allResults;
+  }
+
   async executeAgentsParallel(agentNames, criteria) {
     const promises = agentNames.map(async (agentName) => {
       return await this.executeAgent(agentName, criteria);

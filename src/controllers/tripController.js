@@ -7,16 +7,20 @@ import { formatSuccess } from '../middleware/validation.js';
 async function executeOrchestratorAsync(tripId, tripRequest) {
   try {
     console.log(`🚀 Starting orchestrator execution for trip ${tripId}`);
-    
+
+    // Log which agents will be executed
+    const agentsToRun = tripRequest.agentsToRun || ['flight', 'accommodation', 'activity', 'restaurant'];
+    console.log(`🎯 Executing agents: ${agentsToRun.join(', ')}`);
+
     // Create orchestrator instance
     const orchestrator = new TripOrchestrator({}, tripId);
-    
-    // Execute the orchestrator
+
+    // Execute the orchestrator (tripRequest contains agentsToRun)
     const result = await orchestrator.execute(tripRequest, tripId);
-    
-    console.log(`✅ Orchestrator execution completed for trip ${tripId}`, result);
+
+    console.log(`✅ Orchestrator execution completed for trip ${tripId}`);
     return result;
-    
+
   } catch (error) {
     console.error(`❌ Orchestrator execution failed for trip ${tripId}:`, error);
     throw error;
@@ -246,7 +250,8 @@ export const createTrip = async (req, res) => {
             status: triggerOrchestrator
               ? (isSelected ? 'pending' : 'skipped')
               : 'pending',
-            recommendationCount: 0
+            recommendationCount: 0,
+            errors: []
           };
           return acc;
         }, {})
@@ -254,7 +259,12 @@ export const createTrip = async (req, res) => {
     };
 
     const trip = await Trip.create(tripData);
-    console.log(`Created trip ${trip.tripId} for ${destination}`);
+    console.log(`✅ Created trip ${trip.tripId} for ${destination}`);
+    console.log(`🎯 Agents to run: ${selectedAgents.join(', ')}`);
+    if (selectedAgents.length < VALID_AGENTS.length) {
+      const skippedAgents = VALID_AGENTS.filter(a => !selectedAgents.includes(a));
+      console.log(`⏭️  Skipped agents: ${skippedAgents.join(', ')}`);
+    }
 
     // Calculate estimated completion time (assuming 30-60 seconds per agent, 5 agents)
     const estimatedSeconds = triggerOrchestrator ? 180 : 0; // 3 minutes for all agents
@@ -498,6 +508,8 @@ export const rerunAgents = async (req, res) => {
       await Trip.findByIdAndUpdate(trip._id, removedRecommendations);
     }
 
+    console.log(`🔄 Re-running agents: ${agentsToRerun.join(', ')}`);
+
     res.json(formatSuccess(
       {
         tripId: trip.tripId,
@@ -526,7 +538,8 @@ export const rerunAgents = async (req, res) => {
         cuisines: trip.preferences.dining?.cuisinePreferences,
         diningBudget: trip.preferences.dining?.priceRange
       },
-      interests: trip.preferences.interests
+      interests: trip.preferences.interests,
+      agentsToRun: agentsToRerun
     };
 
     executeOrchestratorAsync(trip._id, tripRequest).catch(error => {

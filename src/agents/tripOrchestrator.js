@@ -108,16 +108,30 @@ export class TripOrchestrator extends BaseAgent {
 
       // Determine which agents to run
       const agentsToRun = tripRequest.agentsToRun;
+      const allAgents = ['flight', 'accommodation', 'activity', 'restaurant'];
       let agentResults;
 
-      if (agentsToRun && Array.isArray(agentsToRun)) {
+      // Determine requested agents with default fallback
+      const requestedAgents = agentsToRun && Array.isArray(agentsToRun) && agentsToRun.length > 0
+        ? agentsToRun
+        : allAgents;
+
+      console.log(`🎯 TripOrchestrator will execute agents: ${requestedAgents.join(', ')}`);
+
+      // Log skipped agents if any
+      const skippedAgents = allAgents.filter(a => !requestedAgents.includes(a));
+      if (skippedAgents.length > 0) {
+        console.log(`⏭️  Skipping agents: ${skippedAgents.join(', ')}`);
+      }
+
+      if (agentsToRun && Array.isArray(agentsToRun) && agentsToRun.length > 0) {
         // Use selective agent execution
-        console.log(`🎯 Selective execution mode: ${agentsToRun.join(', ')}`);
+        console.log(`🎯 Selective execution mode enabled`);
         agentResults = await this.executeSelectedAgents(agentsToRun, criteria);
       } else {
         // Execute all agents (backward compatibility)
         console.log(`🎯 Full execution mode: all agents`);
-        agentResults = await this.executeAgentsWithDependencies(criteria, ['flight', 'accommodation', 'activity', 'restaurant']);
+        agentResults = await this.executeAgentsWithDependencies(criteria, allAgents);
       }
       
       console.log('Enhanced agent execution completed:', {

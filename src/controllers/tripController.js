@@ -28,21 +28,34 @@ async function executeOrchestratorAsync(tripId, tripRequest) {
 }
 
 
+/**
+ * GET /api/trip/:tripId
+ *
+ * Returns trip metadata and status WITHOUT populating recommendations.
+ * This endpoint provides a lean response (~80-90% smaller payload) containing:
+ * - Trip metadata (destination, dates, travelers, preferences)
+ * - Agent execution status and counts
+ * - Recommendation IDs (not full objects)
+ * - Selected recommendation IDs (not full objects)
+ *
+ * To fetch actual recommendations, use the modular endpoints:
+ * - GET /api/trip/:tripId/recommendations/flights
+ * - GET /api/trip/:tripId/recommendations/hotels
+ * - GET /api/trip/:tripId/recommendations/experiences
+ * - GET /api/trip/:tripId/recommendations/restaurants
+ *
+ * This architecture allows:
+ * - Fast initial trip overview load
+ * - Independent recommendation fetching per agent
+ * - Per-agent loading states in UI
+ * - Reduced initial bandwidth usage
+ */
 export const getTripById = async (req, res) => {
   try {
     const { tripId } = req.params;
-    
-    const trip = await Trip.findOne({ tripId })
-      .populate('recommendations.flight')
-      .populate('recommendations.accommodation')
-      .populate('recommendations.activity')
-      .populate('recommendations.restaurant')
-      .populate('recommendations.transportation')
-      .populate('selectedRecommendations.flight.recommendation')
-      .populate('selectedRecommendations.accommodation.recommendation')
-      .populate('selectedRecommendations.activity.recommendation')
-      .populate('selectedRecommendations.restaurant.recommendation')
-      .populate('selectedRecommendations.transportation.recommendation');
+
+    // Fetch trip WITHOUT populating recommendations (lean response)
+    const trip = await Trip.findOne({ tripId });
 
     if (!trip) {
       return res.status(404).json({
@@ -52,10 +65,15 @@ export const getTripById = async (req, res) => {
       });
     }
 
+    // Response includes:
+    // - All trip metadata
+    // - agentExecution with status and counts
+    // - Recommendation array lengths (IDs only, not populated)
+    // - Selected recommendations (IDs only, not populated)
     res.json({
       success: true,
       data: trip,
-      message: 'Trip retrieved successfully'
+      message: 'Trip metadata retrieved successfully'
     });
 
   } catch (error) {

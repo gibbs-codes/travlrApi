@@ -17,7 +17,7 @@ export class FlightAgent extends TripPlanningAgent {
 
   async search(criteria) {
     try {
-      console.log('FlightAgent searching with criteria:', criteria);
+      this.logInfo('FlightAgent searching with criteria:', criteria);
 
       // Validate required criteria
       if (!criteria.origin || !criteria.destination || !criteria.departureDate) {
@@ -36,18 +36,18 @@ export class FlightAgent extends TripPlanningAgent {
       };
 
       const flights = await amadeusService.searchFlights(searchParams);
-      console.log(`Found ${flights.length} flights from Amadeus`);
+      this.logInfo(`Found ${flights.length} flights from Amadeus`);
 
       // Handle empty results
       if (flights.length === 0) {
-        console.log('ℹ️ No flights returned from Amadeus. Possible reasons:');
-        console.log('  - Dates may be too far in the future (Amadeus typically supports up to 11 months)');
-        console.log('  - No availability for the specified route and dates');
-        console.log('  - Route may not be served by any airlines in Amadeus database');
+        this.logInfo('ℹ️ No flights returned from Amadeus. Possible reasons:');
+        this.logInfo('  - Dates may be too far in the future (Amadeus typically supports up to 11 months)');
+        this.logInfo('  - No availability for the specified route and dates');
+        this.logInfo('  - Route may not be served by any airlines in Amadeus database');
 
         // Fallback to mock data in development
         if (process.env.NODE_ENV === 'development') {
-          console.warn(`⚠️ No flights found from Amadeus for ${criteria.origin} to ${criteria.destination} on ${criteria.departureDate}. Using mock data.`);
+          this.logWarn(`⚠️ No flights found from Amadeus for ${criteria.origin} to ${criteria.destination} on ${criteria.departureDate}. Using mock data.`);
           return this.getMockFlights(criteria);
         }
 
@@ -58,11 +58,11 @@ export class FlightAgent extends TripPlanningAgent {
       return this.applyFilters(flights, criteria);
       
     } catch (error) {
-      console.error('FlightAgent search error:', error);
+      this.logError('FlightAgent search error:', error);
       
       // Fallback to mock data if API fails (for development)
       if (process.env.NODE_ENV === 'development') {
-        console.log('Falling back to mock data for development');
+        this.logInfo('Falling back to mock data for development');
         return this.getMockFlights(criteria);
       }
       
@@ -211,7 +211,7 @@ export class FlightAgent extends TripPlanningAgent {
         }
       };
     } catch (error) {
-      console.error('AI recommendation generation failed:', error);
+      this.logError('AI recommendation generation failed:', error);
       
       // **IMPORTANT: Still return recommendations even if AI fails**
       const topFlights = results.slice(0, 3).map((flight, index) => 

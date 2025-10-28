@@ -258,7 +258,6 @@ class DeploymentValidator {
             travelers: { count: 2, adults: 2, children: 0, infants: 0 },
             preferences: {
               interests: ["cultural", "food"],
-              budget: { total: 3000, currency: "USD" }
             },
             collaboration: { createdBy: "perf_test" }
           };

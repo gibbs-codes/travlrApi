@@ -132,21 +132,20 @@ export class ActivityAgent extends TripPlanningAgent {
 
   async search(criteria) {
     const startTime = Date.now();
-    console.log('🎯 ActivityAgent.search: Starting');
-    console.log('🎯 ActivityAgent.search: Criteria:', JSON.stringify({
+    this.logInfo('🎯 ActivityAgent.search: Starting');
+    this.logInfo('🎯 ActivityAgent.search: Criteria:', JSON.stringify({
       destination: criteria.destination,
       interests: criteria.interests,
       travelersCount: criteria.travelersCount,
-      budget: criteria.budget,
       preferredArea: criteria.preferredArea,
       executionContext: !!criteria.executionContext,
       tripId: criteria.tripId
     }, null, 2));
 
     try {
-      console.log('🔍 ActivityAgent.search: Step 1 - Building AI prompt...');
+      this.logInfo('🔍 ActivityAgent.search: Step 1 - Building AI prompt...');
       const prompt = this.buildActivitySearchPrompt(criteria);
-      console.log('📝 ActivityAgent.search: Prompt length:', prompt.length, 'characters');
+      this.logInfo('📝 ActivityAgent.search: Prompt length:', prompt.length, 'characters');
 
       const activitySchema = {
         recommendations: [
@@ -164,60 +163,60 @@ export class ActivityAgent extends TripPlanningAgent {
         ]
       };
 
-      console.log('🔍 ActivityAgent.search: Step 2 - Calling AI provider...');
-      console.log('   AI Provider:', this.aiProvider?.constructor?.name || 'Unknown');
+      this.logInfo('🔍 ActivityAgent.search: Step 2 - Calling AI provider...');
+      this.logInfo('   AI Provider:', this.aiProvider?.constructor?.name || 'Unknown');
       const aiStartTime = Date.now();
 
       const response = await this.generateStructuredResponse(prompt, activitySchema);
 
       const aiDuration = Date.now() - aiStartTime;
-      console.log(`⏱️ ActivityAgent.search: AI call completed in ${aiDuration}ms`);
-      console.log('📊 ActivityAgent.search: Response type:', typeof response);
+      this.logInfo(`⏱️ ActivityAgent.search: AI call completed in ${aiDuration}ms`);
+      this.logInfo('📊 ActivityAgent.search: Response type:', typeof response);
       
-      console.log('🔍 ActivityAgent.search: Step 3 - Parsing AI response...');
+      this.logInfo('🔍 ActivityAgent.search: Step 3 - Parsing AI response...');
 
       // More robust response parsing
       let recommendations = null;
 
       if (response) {
-        console.log('   Response has keys:', Object.keys(response));
+        this.logInfo('   Response has keys:', Object.keys(response));
 
         // Try different possible response structures
         if (response.content && response.content.recommendations && Array.isArray(response.content.recommendations)) {
           recommendations = response.content.recommendations;
-          console.log('   ✅ Found recommendations in response.content.recommendations');
+          this.logInfo('   ✅ Found recommendations in response.content.recommendations');
         } else if (response.recommendations && Array.isArray(response.recommendations)) {
           recommendations = response.recommendations;
-          console.log('   ✅ Found recommendations in response.recommendations');
+          this.logInfo('   ✅ Found recommendations in response.recommendations');
         } else if (response.content && response.content.activities && Array.isArray(response.content.activities)) {
           recommendations = response.content.activities;
-          console.log('   ✅ Found recommendations in response.content.activities');
+          this.logInfo('   ✅ Found recommendations in response.content.activities');
         } else if (response.activities && Array.isArray(response.activities)) {
           recommendations = response.activities;
-          console.log('   ✅ Found recommendations in response.activities');
+          this.logInfo('   ✅ Found recommendations in response.activities');
         } else if (Array.isArray(response)) {
           recommendations = response;
-          console.log('   ✅ Response is array');
+          this.logInfo('   ✅ Response is array');
         } else {
-          console.error('   ❌ Could not find recommendations in response structure');
-          console.error('   Response structure:', JSON.stringify(response, null, 2).substring(0, 500));
+          this.logError('   ❌ Could not find recommendations in response structure');
+          this.logError('   Response structure:', JSON.stringify(response, null, 2).substring(0, 500));
         }
       } else {
-        console.error('   ❌ Response is null/undefined');
+        this.logError('   ❌ Response is null/undefined');
       }
 
       if (recommendations && Array.isArray(recommendations) && recommendations.length > 0) {
-        console.log(`✅ ActivityAgent.search: Found ${recommendations.length} recommendations`);
+        this.logInfo(`✅ ActivityAgent.search: Found ${recommendations.length} recommendations`);
 
         // Sanitize price data - convert "N/A" or invalid strings to null
-        console.log('🔍 ActivityAgent.search: Step 4 - Sanitizing data...');
+        this.logInfo('🔍 ActivityAgent.search: Step 4 - Sanitizing data...');
         const sanitized = recommendations.map(activity => {
           const sanitizedActivity = { ...activity };
 
           // Handle price field
           if (activity.price === 'N/A' || activity.price === 'n/a' || typeof activity.price === 'string') {
             sanitizedActivity.price = null;
-            console.log(`⚠️ Sanitized price for ${activity.name}: "${activity.price}" → null`);
+            this.logInfo(`⚠️ Sanitized price for ${activity.name}: "${activity.price}" → null`);
           } else if (activity.price === undefined || activity.price === null) {
             sanitizedActivity.price = null;
           }
@@ -226,25 +225,25 @@ export class ActivityAgent extends TripPlanningAgent {
         });
 
         const totalDuration = Date.now() - startTime;
-        console.log(`✅ ActivityAgent.search: Completed successfully in ${totalDuration}ms`);
+        this.logInfo(`✅ ActivityAgent.search: Completed successfully in ${totalDuration}ms`);
         return sanitized;
       } else {
-        console.error(`❌ ActivityAgent.search: AI returned empty or invalid recommendations`);
-        console.warn('   Falling back to mock activities immediately');
+        this.logError(`❌ ActivityAgent.search: AI returned empty or invalid recommendations`);
+        this.logWarn('   Falling back to mock activities immediately');
 
         const mockData = this.getMockActivities(criteria);
-        console.log(`📊 ActivityAgent.search: Returning ${mockData.length} mock activities as fallback`);
+        this.logInfo(`📊 ActivityAgent.search: Returning ${mockData.length} mock activities as fallback`);
         return mockData;
       }
     } catch (error) {
       const totalDuration = Date.now() - startTime;
-      console.error(`❌ ActivityAgent.search: Failed after ${totalDuration}ms`);
-      console.error(`   Error: ${error.message}`);
-      console.error(`   Stack: ${error.stack}`);
-      console.warn(`⚠️ ActivityAgent AI search failed: ${error.message}. Falling back to mock data.`);
+      this.logError(`❌ ActivityAgent.search: Failed after ${totalDuration}ms`);
+      this.logError(`   Error: ${error.message}`);
+      this.logError(`   Stack: ${error.stack}`);
+      this.logWarn(`⚠️ ActivityAgent AI search failed: ${error.message}. Falling back to mock data.`);
 
       const mockData = this.getMockActivities(criteria);
-      console.log(`📊 ActivityAgent.search: Returning ${mockData.length} mock activities as fallback`);
+      this.logInfo(`📊 ActivityAgent.search: Returning ${mockData.length} mock activities as fallback`);
       return mockData;
     }
   }
@@ -255,7 +254,6 @@ export class ActivityAgent extends TripPlanningAgent {
       interests = [],
       travelersCount = 1,
       durationPreferences = 'flexible',
-      budget,
       travelStyle,
       dates
     } = criteria;
@@ -266,7 +264,6 @@ DESTINATION: ${destination}
 TRAVELERS: ${travelersCount} person${travelersCount > 1 ? 's' : ''}
 INTERESTS: ${interests.length > 0 ? interests.join(', ') : 'General sightseeing and cultural experiences'}
 DURATION PREFERENCES: ${durationPreferences}
-${budget ? `BUDGET: ${budget}` : ''}
 ${travelStyle ? `TRAVEL STYLE: ${travelStyle}` : ''}
 ${dates ? `TRAVEL DATES: ${dates}` : ''}
 
@@ -299,70 +296,65 @@ Focus on quality over quantity. Make recommendations that would genuinely enhanc
   }
 
   getMockActivities(criteria) {
-    console.log('🎯 ActivityAgent.getMockActivities: Starting');
-    console.log('   Total mock activities available:', this.mockActivities.length);
-    console.log('   Filter criteria:', {
-      budget: criteria.budget,
+    this.logInfo('🎯 ActivityAgent.getMockActivities: Starting');
+    this.logInfo('   Total mock activities available:', this.mockActivities.length);
+    this.logInfo('   Filter criteria:', {
       interests: criteria.interests,
       destination: criteria.destination
     });
 
     // First try to filter by criteria
     const filtered = this.mockActivities.filter(activity => {
-      if (criteria.budget && activity.price > criteria.budget) {
-        console.log(`   ❌ Filtered out ${activity.name}: price ${activity.price} > budget ${criteria.budget}`);
-        return false;
-      }
       if (criteria.interests && criteria.interests.length > 0) {
         const hasMatchingInterest = criteria.interests.some(interest =>
           activity.category.toLowerCase().includes(interest.toLowerCase()) ||
           activity.description.toLowerCase().includes(interest.toLowerCase())
         );
         if (!hasMatchingInterest) {
-          console.log(`   ❌ Filtered out ${activity.name}: no matching interests`);
+          this.logInfo(`   ❌ Filtered out ${activity.name}: no matching interests`);
           return false;
         }
       }
-      console.log(`   ✅ Included ${activity.name}`);
+      this.logInfo(`   ✅ Included ${activity.name}`);
       return true;
     });
 
     // FALLBACK: If filtering returns nothing, return at least 3 activities
     if (filtered.length === 0) {
-      console.warn('⚠️ ActivityAgent.getMockActivities: Filtering returned 0 results!');
-      console.warn('   Returning first 3 mock activities as guaranteed fallback');
+      this.logWarn('⚠️ ActivityAgent.getMockActivities: Filtering returned 0 results!');
+      this.logWarn('   Returning first 3 mock activities as guaranteed fallback');
       const fallbackActivities = this.mockActivities.slice(0, 3);
-      console.log(`📊 ActivityAgent.getMockActivities: Returning ${fallbackActivities.length} fallback activities`);
+      this.logInfo(`📊 ActivityAgent.getMockActivities: Returning ${fallbackActivities.length} fallback activities`);
       return fallbackActivities;
     }
 
-    console.log(`📊 ActivityAgent.getMockActivities: Returning ${filtered.length}/${this.mockActivities.length} activities`);
+    this.logInfo(`📊 ActivityAgent.getMockActivities: Returning ${filtered.length}/${this.mockActivities.length} activities`);
     return filtered;
   }
 
   async rank(results) {
-    console.log('🎯 ActivityAgent.rank: Starting');
-    console.log(`   Input: ${results ? (Array.isArray(results) ? results.length : 'not array') : 'null'} results`);
+    this.logInfo('🎯 ActivityAgent.rank: Starting');
+    this.logInfo(`   Input: ${results ? (Array.isArray(results) ? results.length : 'not array') : 'null'} results`);
 
     if (!results || !Array.isArray(results)) {
-      console.warn('⚠️ ActivityAgent.rank: Results is not an array, returning as-is');
+      this.logWarn('⚠️ ActivityAgent.rank: Results is not an array, returning as-is');
       return results;
     }
 
     if (results.length === 0) {
-      console.warn('⚠️ ActivityAgent.rank: Results array is empty');
+      this.logWarn('⚠️ ActivityAgent.rank: Results array is empty');
       return results;
     }
 
-    console.log('🔍 ActivityAgent.rank: Calculating scores and sorting...');
+    this.logInfo('🔍 ActivityAgent.rank: Calculating scores and sorting...');
     const ranked = results.map(activity => ({
       ...activity,
       score: this.calculateActivityScore(activity)
     })).sort((a, b) => b.score - a.score);
 
-    console.log(`✅ ActivityAgent.rank: Ranked ${ranked.length} activities`);
+    this.logInfo(`✅ ActivityAgent.rank: Ranked ${ranked.length} activities`);
     if (ranked.length > 0) {
-      console.log(`   Top activity: ${ranked[0].name} (score: ${ranked[0].score})`);
+      this.logInfo(`   Top activity: ${ranked[0].name} (score: ${ranked[0].score})`);
     }
 
     return ranked;
@@ -403,25 +395,24 @@ Focus on quality over quantity. Make recommendations that would genuinely enhanc
 
   async generateRecommendations(results, task) {
     const startTime = Date.now();
-    console.log('🎯 ActivityAgent.generateRecommendations: Starting');
-    console.log(`   Input: ${results ? results.length : 0} results`);
-    console.log('   Task criteria:', {
+    this.logInfo('🎯 ActivityAgent.generateRecommendations: Starting');
+    this.logInfo(`   Input: ${results ? results.length : 0} results`);
+    this.logInfo('   Task criteria:', {
       destination: task.criteria?.destination,
-      interests: task.criteria?.interests,
-      budget: task.criteria?.budget
+      interests: task.criteria?.interests
     });
 
     try {
-      console.log('🔍 ActivityAgent.generateRecommendations: Calling parent class method...');
+      this.logInfo('🔍 ActivityAgent.generateRecommendations: Calling parent class method...');
       const aiStartTime = Date.now();
 
       // Use parent class method first
       const aiResponse = await super.generateRecommendations(results, task);
 
       const aiDuration = Date.now() - aiStartTime;
-      console.log(`⏱️ ActivityAgent.generateRecommendations: Parent method completed in ${aiDuration}ms`);
-      console.log('   Response type:', typeof aiResponse);
-      console.log('   Response keys:', aiResponse ? Object.keys(aiResponse) : 'null');
+      this.logInfo(`⏱️ ActivityAgent.generateRecommendations: Parent method completed in ${aiDuration}ms`);
+      this.logInfo('   Response type:', typeof aiResponse);
+      this.logInfo('   Response keys:', aiResponse ? Object.keys(aiResponse) : 'null');
 
       // Enhance with activity-specific metadata
       const enhanced = {
@@ -434,7 +425,6 @@ Focus on quality over quantity. Make recommendations that would genuinely enhanc
           destination: task.criteria.destination || 'Unknown',
           searchCriteria: {
             interests: task.criteria.interests || [],
-            budget: task.criteria.budget,
             travelersCount: task.criteria.travelersCount || 1,
             durationPreferences: task.criteria.durationPreferences || 'flexible'
           }
@@ -442,15 +432,15 @@ Focus on quality over quantity. Make recommendations that would genuinely enhanc
       };
 
       const totalDuration = Date.now() - startTime;
-      console.log(`✅ ActivityAgent.generateRecommendations: Completed successfully in ${totalDuration}ms`);
+      this.logInfo(`✅ ActivityAgent.generateRecommendations: Completed successfully in ${totalDuration}ms`);
 
       return enhanced;
     } catch (error) {
       const totalDuration = Date.now() - startTime;
-      console.error(`❌ ActivityAgent.generateRecommendations: Failed after ${totalDuration}ms`);
-      console.error(`   Error: ${error.message}`);
-      console.error(`   Stack: ${error.stack}`);
-      console.warn(`⚠️ ActivityAgent generateRecommendations failed: ${error.message}. Using direct fallback.`);
+      this.logError(`❌ ActivityAgent.generateRecommendations: Failed after ${totalDuration}ms`);
+      this.logError(`   Error: ${error.message}`);
+      this.logError(`   Stack: ${error.stack}`);
+      this.logWarn(`⚠️ ActivityAgent generateRecommendations failed: ${error.message}. Using direct fallback.`);
 
       // Direct fallback structure when AI fails
       const fallback = {
@@ -464,14 +454,13 @@ Focus on quality over quantity. Make recommendations that would genuinely enhanc
           destination: task.criteria.destination || 'Unknown',
           searchCriteria: {
             interests: task.criteria.interests || [],
-            budget: task.criteria.budget,
             travelersCount: task.criteria.travelersCount || 1,
             durationPreferences: task.criteria.durationPreferences || 'flexible'
           }
         }
       };
 
-      console.log(`📊 ActivityAgent.generateRecommendations: Returning fallback with ${fallback.recommendations.length} items`);
+      this.logInfo(`📊 ActivityAgent.generateRecommendations: Returning fallback with ${fallback.recommendations.length} items`);
       return fallback;
     }
   }

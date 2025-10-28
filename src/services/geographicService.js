@@ -1,6 +1,10 @@
 // Geographic Service for TravlrAPI
 // Provides location-aware clustering, travel time estimation, and feasibility validation
 
+import logger from '../utils/logger.js';
+
+const log = logger.child({ scope: 'GeographicService' });
+
 class GeographicService {
   constructor() {
     // Mock city centers for development - replace with real geocoding API later
@@ -66,7 +70,7 @@ class GeographicService {
     );
 
     if (validRecs.length === 0) {
-      console.warn('No recommendations with valid coordinates for clustering');
+      log.warn('No recommendations with valid coordinates for clustering');
       return [{
         id: 'cluster_default',
         center: null,
@@ -76,7 +80,7 @@ class GeographicService {
       }];
     }
 
-    console.log(`Clustering ${validRecs.length} recommendations with valid coordinates`);
+    log.debug(`Clustering ${validRecs.length} recommendations with valid coordinates`);
 
     // Use K-means-like clustering approach
     const clusters = this.performClustering(validRecs, config);
@@ -200,7 +204,7 @@ class GeographicService {
       };
     }
 
-    console.log(`Optimizing route for ${locations.length} locations using ${transportMode}`);
+    log.debug(`Optimizing route for ${locations.length} locations using ${transportMode}`);
 
     // Simple nearest-neighbor optimization (can be enhanced with more sophisticated algorithms)
     const optimizedRoute = this.nearestNeighborRoute(locations, startLocation);
@@ -240,7 +244,7 @@ class GeographicService {
       };
     }
 
-    console.log(`Validating feasibility of ${dayPlan.length} locations for ${config.travelStyle} travel style`);
+    log.debug(`Validating feasibility of ${dayPlan.length} locations for ${config.travelStyle} travel style`);
 
     const analysis = {
       totalTravelTime: 0,
@@ -723,7 +727,7 @@ class GeographicService {
 
   // Mock geocoding function for development
   async mockGeocode(address) {
-    console.log(`Mock geocoding: ${address}`);
+    log.debug(`Mock geocoding: ${address}`);
     
     // Simple city matching
     const cityName = address.toLowerCase();

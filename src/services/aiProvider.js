@@ -216,7 +216,6 @@ class MockAIProvider extends BaseAIProvider {
         tripSummary: {
           destination: 'Paris, France',
           dates: { departure: '2024-03-15', return: '2024-03-20' },
-          budget: { total: 2500, breakdown: { flight: 800, accommodation: 900, activities: 400, dining: 400 } },
           confidence: 88
         },
         recommendations: {

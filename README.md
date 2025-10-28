@@ -16,6 +16,7 @@ A Node.js/Express backend with AI agents for trip planning, designed to work wit
    - Mock AI provider (no API keys needed)
    - MongoDB connection to localhost
    - CORS enabled for React frontend
+   - Verbose logging (`LOG_LEVEL=debug`)
 
 3. **Start the Server**
    ```bash
@@ -44,17 +45,18 @@ A Node.js/Express backend with AI agents for trip planning, designed to work wit
 - **Trip Planning Endpoint**: `POST /api/trip/plan`
 - **Agent Status**: `GET /api/trip/agents/status`  
 - **Health Check**: `GET /health`
-- **AI Agent Orchestration**: 5 specialized agents working together
-- **Mock Data**: Enhanced mock data for all agent types
+- **AI Agent Orchestration**: Specialised agents coordinate through the trip orchestrator
+- **Structured Logging**: Centralised logger with environment-aware log levels
+- **Mock Data**: Enhanced mock data for every agent type
 - **MongoDB Integration**: Ready for data persistence
 
 ### ✅ AI Agents
-- **FlightAgent**: Enhanced with 6+ flight options, dynamic pricing
-- **AccommodationAgent**: 8+ accommodation types (hotels, Airbnb, hostels)
-- **ActivityAgent**: Cultural, food, adventure activities
-- **RestaurantAgent**: Diverse cuisine options with ratings
-- **TransportationAgent**: Multiple transport modes
-- **TripOrchestrator**: Coordinates all agents
+- **FlightAgent**: Enhanced with realistic flight options and dynamic pricing
+- **AccommodationAgent**: Supports multiple accommodation types and amenity filters
+- **ActivityAgent**: Cultural, food, adventure experiences with activity metadata
+- **RestaurantAgent**: Diverse cuisine options powered by Google Places
+- **TransportationAgent**: Multiple transport modes (mocked for development)
+- **TripOrchestrator**: Coordinates all agents with detailed execution telemetry
 
 ### ✅ Frontend Integration  
 - **API Service Layer**: Complete TypeScript service for backend calls
@@ -129,6 +131,7 @@ AI_PROVIDER=mock          # Uses mock AI responses
 MONGODB_URI=mongodb://localhost:27017/travlrapi
 CORS_ORIGIN=*
 MOCK_DELAY_MS=500         # Simulated API response delay
+LOG_LEVEL=debug           # Logging verbosity (debug, info, warn, error)
 ```
 
 ### Switching to Real AI Providers

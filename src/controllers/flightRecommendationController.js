@@ -154,7 +154,7 @@ class FlightRecommendationController extends BaseRecommendationController {
       }, 'Flight recommendations retrieved successfully'));
 
     } catch (error) {
-      console.error('Get flight recommendations error:', error);
+      this.log.error('Get flight recommendations error', { error: error.message, stack: error.stack });
       res.status(500).json({
         success: false,
         error: error.message,

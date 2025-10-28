@@ -1,6 +1,10 @@
 // Validation middleware for TravlrAPI
 // Provides structured input validation and error formatting
 
+import logger from '../utils/logger.js';
+
+const log = logger.child({ scope: 'ValidationMiddleware' });
+
 export const validateTripCreation = (req, res, next) => {
   const errors = [];
   const { body } = req;
@@ -57,27 +61,6 @@ export const validateTripCreation = (req, res, next) => {
       }
       if (adults < 1) {
         errors.push('at least 1 adult traveler is required');
-      }
-    }
-  }
-
-  // Budget validation
-  if (body.budget && typeof body.budget === 'object') {
-    const { total, currency, ...categories } = body.budget;
-
-    if (total !== undefined && (typeof total !== 'number' || total < 0)) {
-      errors.push('budget.total must be a positive number');
-    }
-
-    // Validate currency separately as a string
-    if (currency !== undefined && typeof currency !== 'string') {
-      errors.push('budget.currency must be a string');
-    }
-
-    // Now check the remaining properties (breakdown categories)
-    for (const [category, amount] of Object.entries(categories)) {
-      if (amount !== undefined && (typeof amount !== 'number' || amount < 0)) {
-        errors.push(`budget.${category} must be a positive number`);
       }
     }
   }
@@ -229,7 +212,7 @@ export const validatePagination = (req, res, next) => {
 
 // Error formatting middleware
 export const formatError = (error, req, res, next) => {
-  console.error(`API Error [${req.method} ${req.path}]:`, error);
+  log.error(`API Error [${req.method} ${req.path}]`, { error: error.message, stack: error.stack });
 
   // Database/Mongoose errors
   if (error.name === 'ValidationError') {
@@ -292,69 +275,4 @@ export const asyncHandler = (fn) => {
   return (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };
-};
-
-// === SHARING VALIDATION ===
-
-// Validate share token parameter
-export const validateShareToken = (req, res, next) => {
-  const { shareToken } = req.params;
-  const errors = [];
-
-  if (!shareToken) {
-    errors.push('Share token is required');
-  } else if (typeof shareToken !== 'string') {
-    errors.push('Share token must be a string');
-  } else if (shareToken.length < 10) {
-    errors.push('Invalid share token format');
-  }
-
-  if (errors.length > 0) {
-    return res.status(400).json({
-      success: false,
-      error: 'Validation failed',
-      details: errors,
-      message: 'Please check your input and try again'
-    });
-  }
-
-  next();
-};
-
-// Validate collaborator data
-export const validateCollaborator = (req, res, next) => {
-  const { email, role, userId } = req.body;
-  const errors = [];
-
-  // Basic user identification required for MVP
-  if (!userId) {
-    errors.push('userId is required for authorization');
-  }
-
-  if (!email) {
-    errors.push('Collaborator email is required');
-  } else if (typeof email !== 'string') {
-    errors.push('Email must be a string');
-  } else {
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      errors.push('Invalid email format');
-    }
-  }
-
-  if (role && !['viewer', 'editor', 'owner'].includes(role)) {
-    errors.push('Role must be one of: viewer, editor, owner');
-  }
-
-  if (errors.length > 0) {
-    return res.status(400).json({
-      success: false,
-      error: 'Validation failed',
-      details: errors,
-      message: 'Please check your input and try again'
-    });
-  }
-
-  next();
 };

@@ -1,3 +1,7 @@
+import logger from '../utils/logger.js';
+
+const log = logger.child({ scope: 'RapidApiHotelService' });
+
 class RapidApiHotelService {
   constructor() {
     this.baseUrl = 'https://booking-com.p.rapidapi.com/v1';
@@ -10,13 +14,13 @@ class RapidApiHotelService {
       this.apiKey = process.env.RAPIDAPI_KEY;
       
       if (!this.apiKey) {
-        console.error('❌ RAPIDAPI_KEY not found in environment variables');
+        log.error('❌ RAPIDAPI_KEY not found in environment variables');
         this.isEnabled = false;
         return null;
       }
       
       this.isEnabled = true;
-      console.log('✅ RapidAPI key loaded successfully');
+      log.info('✅ RapidAPI key loaded successfully');
     }
     
     return this.apiKey;
@@ -39,10 +43,10 @@ class RapidApiHotelService {
         currency = 'USD' // Allow currency to be specified in search params
       } = searchParams;
 
-      console.log('Searching hotels via RapidAPI:', { destination, checkIn, checkOut, currency });
+      log.debug('Searching hotels via RapidAPI', { destination, checkIn, checkOut, currency });
 
       const destId = this.getDestinationId(destination);
-      console.log(`Using destination ID: ${destId} for ${destination}`);
+      log.debug(`Using destination ID: ${destId} for ${destination}`);
 
       // Build query parameters with the EXACT field names the API expects
       const queryParams = new URLSearchParams({
@@ -64,8 +68,7 @@ class RapidApiHotelService {
       });
 
       const url = `${this.baseUrl}/hotels/search?${queryParams}`;
-      console.log('RapidAPI Request URL:', url);
-      console.log(`💱 Requesting prices in: ${currency}`);
+      log.debug('RapidAPI Request URL', { url, currency });
 
       const response = await fetch(url, {
         method: 'GET',
@@ -75,11 +78,11 @@ class RapidApiHotelService {
         }
       });
 
-      console.log('RapidAPI Response Status:', response.status);
+      log.debug('RapidAPI Response Status', { status: response.status });
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('RapidAPI Error Response:', errorText);
+        log.error('RapidAPI Error Response', { error: errorText });
 
         if (response.status === 422) {
           throw new Error(`RapidAPI validation error - check required parameters: ${errorText}`);
@@ -89,10 +92,10 @@ class RapidApiHotelService {
       }
 
       const data = await response.json();
-      console.log('RapidAPI Response Data Keys:', Object.keys(data));
+      log.debug('RapidAPI Response Data Keys', { keys: Object.keys(data) });
 
       if (!data.result || !Array.isArray(data.result)) {
-        console.warn('Unexpected API response structure:', data);
+        log.warn('Unexpected API response structure', { data });
         throw new Error(`No hotels found for destination: ${destination}`);
       }
 
@@ -100,22 +103,22 @@ class RapidApiHotelService {
         throw new Error(`No hotels available for ${destination} on ${checkIn} to ${checkOut}`);
       }
 
-      console.log(`Found ${data.result.length} raw hotels from RapidAPI`);
+      log.debug(`Found ${data.result.length} raw hotels from RapidAPI`);
 
       const hotels = this.transformHotelData(data.result, currency);
-      console.log(`Successfully transformed ${hotels.length} hotels`);
+      log.debug(`Successfully transformed ${hotels.length} hotels`);
 
       // Log currency summary
       const currencyCounts = hotels.reduce((acc, hotel) => {
         acc[hotel.currency] = (acc[hotel.currency] || 0) + 1;
         return acc;
       }, {});
-      console.log(`💱 Currency breakdown:`, currencyCounts);
+      log.debug('Currency breakdown', currencyCounts);
 
       return hotels.slice(0, maxResults);
 
     } catch (error) {
-      console.error('RapidAPI hotel search error:', error);
+      log.error('RapidAPI hotel search error', { error: error.message, stack: error.stack });
 
       if (error.message.includes('401') || error.message.includes('403')) {
         throw new Error('RapidAPI authentication failed. Check your API key and subscription.');
@@ -154,15 +157,15 @@ class RapidApiHotelService {
     };
 
     const key = destination.toLowerCase().trim();
-    console.log(`Looking up destination ID for: "${key}"`);
+    log.debug(`Looking up destination ID for: "${key}"`);
     
     if (destinationMap[key]) {
-      console.log(`Found destination ID: ${destinationMap[key]}`);
+      log.debug(`Found destination ID: ${destinationMap[key]}`);
       return destinationMap[key];
     }
 
     // Fallback to Paris if destination not found
-    console.warn(`Destination "${destination}" not found in mapping. Using Paris as fallback.`);
+    log.warn(`Destination "${destination}" not found in mapping. Using Paris as fallback.`);
     return '-1456928'; // Paris
   }
 
@@ -193,7 +196,7 @@ class RapidApiHotelService {
 
       // Warn if currency doesn't match requested currency
       if (normalizedCurrency !== requestedCurrency) {
-        console.warn(`⚠️ Currency mismatch for ${hotel.hotel_name}: expected ${requestedCurrency}, got ${normalizedCurrency}. Price: ${price}`);
+        log.warn(`⚠️ Currency mismatch for ${hotel.hotel_name}: expected ${requestedCurrency}, got ${normalizedCurrency}. Price: ${price}`);
       }
 
       // Handle rating (convert from 0-100 to 0-10 scale)

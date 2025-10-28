@@ -1,5 +1,11 @@
 // src/services/amadeusService.js
 import Amadeus from 'amadeus';
+import dotenv from 'dotenv';
+import logger from '../utils/logger.js';
+
+dotenv.config();
+
+const log = logger.child({ scope: 'AmadeusService' });
 
 class AmadeusService {
   constructor() {
@@ -21,8 +27,8 @@ class AmadeusService {
 
   async _doInitialize() {
     // Debug: Log environment loading
-    console.log('🔧 Initializing Amadeus service...');
-    console.log('Environment variables loaded:', {
+    log.debug('🔧 Initializing Amadeus service...');
+    log.debug('Environment variables loaded:', {
       hasClientId: !!process.env.AMADEUS_CLIENT_ID,
       hasClientSecret: !!process.env.AMADEUS_CLIENT_SECRET,
       environment: process.env.AMADEUS_ENVIRONMENT || 'test'
@@ -33,11 +39,11 @@ class AmadeusService {
     const clientSecret = process.env.AMADEUS_CLIENT_SECRET;
     
     if (!clientId || !clientSecret) {
-      console.error('❌ Missing Amadeus credentials!');
-      console.error('AMADEUS_CLIENT_ID:', clientId ? 'Present' : 'Missing');
-      console.error('AMADEUS_CLIENT_SECRET:', clientSecret ? 'Present' : 'Missing');
-      console.error('Please add AMADEUS_CLIENT_ID and AMADEUS_CLIENT_SECRET to your .env file');
-      console.error('Get them from: https://developers.amadeus.com/my-apps');
+      log.error('❌ Missing Amadeus credentials!');
+      log.error('AMADEUS_CLIENT_ID:', clientId ? 'Present' : 'Missing');
+      log.error('AMADEUS_CLIENT_SECRET:', clientSecret ? 'Present' : 'Missing');
+      log.error('Please add AMADEUS_CLIENT_ID and AMADEUS_CLIENT_SECRET to your .env file');
+      log.error('Get them from: https://developers.amadeus.com/my-apps');
       
       // Don't throw error immediately - let the service be created but mark as disabled
       this.isEnabled = false;
@@ -52,9 +58,9 @@ class AmadeusService {
         hostname: process.env.AMADEUS_ENVIRONMENT === 'production' ? 'production' : 'test'
       });
       this.isEnabled = true;
-      console.log('✅ Amadeus service initialized successfully');
+      log.debug('✅ Amadeus service initialized successfully');
     } catch (error) {
-      console.error('❌ Failed to initialize Amadeus:', error.message);
+      log.error('❌ Failed to initialize Amadeus:', error.message);
       this.isEnabled = false;
       this.amadeus = null;
     }
@@ -76,7 +82,7 @@ class AmadeusService {
 
     // Check cache first
     if (this.airportCodeCache.has(normalizedCity)) {
-      console.log(`✓ Cache hit for ${cityName}: ${this.airportCodeCache.get(normalizedCity)}`);
+      log.debug(`✓ Cache hit for ${cityName}: ${this.airportCodeCache.get(normalizedCity)}`);
       return this.airportCodeCache.get(normalizedCity);
     }
 
@@ -197,14 +203,14 @@ class AmadeusService {
     // Check fallback map FIRST to avoid unnecessary API calls
     const airportCode = cityToAirportMap[normalizedCity];
     if (airportCode) {
-      console.log(`✓ Fallback map hit for ${cityName}: ${airportCode}`);
+      log.debug(`✓ Fallback map hit for ${cityName}: ${airportCode}`);
       this.airportCodeCache.set(normalizedCity, airportCode);
       return airportCode;
     }
 
     // Only call API if not in fallback map and not rate-limited
     if (this.isRateLimited()) {
-      console.warn(`⚠️ Rate limited, using city name as-is: ${cityName}`);
+      log.warn(`⚠️ Rate limited, using city name as-is: ${cityName}`);
       return cityName;
     }
 
@@ -214,22 +220,22 @@ class AmadeusService {
 
       if (airports && airports.length > 0) {
         const code = airports[0].iataCode;
-        console.log(`✓ API lookup for ${cityName}: ${code}`);
+        log.debug(`✓ API lookup for ${cityName}: ${code}`);
         this.airportCodeCache.set(normalizedCity, code);
         return code;
       }
     } catch (error) {
       // Handle rate limit errors
       if (error.response?.result?.errors?.[0]?.code === 38194 || error.response?.status === 429) {
-        console.warn(`⚠️ Rate limit hit for airport lookup: ${cityName}`);
+        log.warn(`⚠️ Rate limit hit for airport lookup: ${cityName}`);
         this.setRateLimitTimeout();
       } else {
-        console.warn(`Failed to lookup airport for ${cityName}:`, error.message);
+        log.warn(`Failed to lookup airport for ${cityName}:`, error.message);
       }
     }
 
     // If no mapping found, return original and let Amadeus flight search API return proper error
-    console.warn(`⚠️ No airport code found for ${cityName}, using as-is`);
+    log.warn(`⚠️ No airport code found for ${cityName}, using as-is`);
     return cityName;
   }
 
@@ -247,7 +253,7 @@ class AmadeusService {
   setRateLimitTimeout(seconds = 60) {
     // Set a timeout before retrying API calls
     this.rateLimitRetryAfter = Date.now() + (seconds * 1000);
-    console.log(`⏱️ Rate limit timeout set for ${seconds} seconds`);
+    log.debug(`⏱️ Rate limit timeout set for ${seconds} seconds`);
   }
 
   async searchFlights(searchParams, retryCount = 0) {
@@ -272,9 +278,9 @@ class AmadeusService {
       const originCode = await this.getCityAirportCode(origin);
       const destinationCode = await this.getCityAirportCode(destination);
 
-      console.log(`Converted: ${origin} → ${originCode}, ${destination} → ${destinationCode}`);
-      console.log('Searching flights:', { origin: originCode, destination: destinationCode, departureDate, currency });
-      console.log(`💱 Requesting flight prices in: ${currency}`);
+      log.debug(`Converted: ${origin} → ${originCode}, ${destination} → ${destinationCode}`);
+      log.debug('Searching flights:', { origin: originCode, destination: destinationCode, departureDate, currency });
+      log.debug(`💱 Requesting flight prices in: ${currency}`);
 
       const response = await this.amadeus.shopping.flightOffersSearch.get({
         originLocationCode: originCode,
@@ -288,14 +294,14 @@ class AmadeusService {
 
       return this.transformFlightData(response.data, currency);
     } catch (error) {
-      console.error('Amadeus flight search error:', error);
+      log.error('Amadeus flight search error:', error);
 
       // Handle rate limiting with exponential backoff
       const isRateLimitError = error.response?.result?.errors?.[0]?.code === 38194 || error.response?.status === 429;
 
       if (isRateLimitError && retryCount < 3) {
         const backoffSeconds = Math.pow(2, retryCount) * 10; // 10s, 20s, 40s
-        console.warn(`⚠️ Rate limit hit (attempt ${retryCount + 1}/3). Retrying in ${backoffSeconds}s...`);
+        log.warn(`⚠️ Rate limit hit (attempt ${retryCount + 1}/3). Retrying in ${backoffSeconds}s...`);
 
         this.setRateLimitTimeout(backoffSeconds);
 
@@ -335,7 +341,7 @@ class AmadeusService {
 
       // Warn if currency doesn't match requested
       if (returnedCurrency !== requestedCurrency) {
-        console.warn(`⚠️ Currency mismatch for flight ${offer.id}: expected ${requestedCurrency}, got ${returnedCurrency}. Price: ${price}`);
+        log.warn(`⚠️ Currency mismatch for flight ${offer.id}: expected ${requestedCurrency}, got ${returnedCurrency}. Price: ${price}`);
       }
 
       return {
@@ -374,7 +380,7 @@ class AmadeusService {
       acc[flight.currency] = (acc[flight.currency] || 0) + 1;
       return acc;
     }, {});
-    console.log(`💱 Flight currency breakdown:`, currencyCounts);
+    log.debug(`💱 Flight currency breakdown:`, currencyCounts);
 
     return flights;
   }
@@ -393,7 +399,7 @@ class AmadeusService {
       });
       return response.data;
     } catch (error) {
-      console.error('Airport search error:', error);
+      log.error('Airport search error:', error);
       throw error;
     }
   }

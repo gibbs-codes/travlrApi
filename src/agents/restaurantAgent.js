@@ -82,9 +82,9 @@ export class RestaurantAgent extends TripPlanningAgent {
       }
 
       // Step 1: Convert destination to coordinates
-      console.log(`🔍 RestaurantAgent: Converting "${destination}" to coordinates...`);
+      this.logInfo(`🔍 RestaurantAgent: Converting "${destination}" to coordinates...`);
       const location = await googlePlacesService.geocodeDestination(destination);
-      console.log(`✅ RestaurantAgent: Found coordinates: ${location.lat}, ${location.lng}`);
+      this.logInfo(`✅ RestaurantAgent: Found coordinates: ${location.lat}, ${location.lng}`);
 
       // Step 2: Build search options
       const searchOptions = {
@@ -113,7 +113,7 @@ export class RestaurantAgent extends TripPlanningAgent {
       }
 
       // Step 3: Search for restaurants
-      console.log(`🔍 RestaurantAgent: Searching restaurants with options:`, searchOptions);
+      this.logInfo(`🔍 RestaurantAgent: Searching restaurants with options:`, searchOptions);
       const { restaurants: googleRestaurants } = await googlePlacesService.searchNearbyRestaurants(
         location, 
         searchOptions
@@ -124,7 +124,7 @@ export class RestaurantAgent extends TripPlanningAgent {
       }
 
       // Step 4: Convert to our schema and apply additional filtering
-      console.log(`✅ RestaurantAgent: Found ${googleRestaurants.length} restaurants from Google Places`);
+      this.logInfo(`✅ RestaurantAgent: Found ${googleRestaurants.length} restaurants from Google Places`);
       
       let restaurants = googleRestaurants
         .map(googlePlace => googlePlacesService.convertToSchema(googlePlace))
@@ -153,19 +153,19 @@ export class RestaurantAgent extends TripPlanningAgent {
         })
         .slice(0, this.searchConfig.maxResults); // Limit results
 
-      console.log(`✅ RestaurantAgent: Returning ${restaurants.length} filtered restaurants`);
+      this.logInfo(`✅ RestaurantAgent: Returning ${restaurants.length} filtered restaurants`);
       return restaurants;
 
     } catch (error) {
-      console.warn(`RestaurantAgent Google Places search failed: ${error.message}. Falling back to mock data.`);
+      this.logWarn(`RestaurantAgent Google Places search failed: ${error.message}. Falling back to mock data.`);
       
       // Handle specific Google API errors
       if (error.message.includes('OVER_QUERY_LIMIT')) {
-        console.warn('Google Places API quota exceeded. Consider upgrading your plan.');
+        this.logWarn('Google Places API quota exceeded. Consider upgrading your plan.');
       } else if (error.message.includes('REQUEST_DENIED')) {
-        console.warn('Google Places API request denied. Check your API key and billing.');
+        this.logWarn('Google Places API request denied. Check your API key and billing.');
       } else if (error.message.includes('INVALID_REQUEST')) {
-        console.warn('Invalid request to Google Places API. Check parameters.');
+        this.logWarn('Invalid request to Google Places API. Check parameters.');
       }
 
       return this.getMockRestaurants(criteria);
@@ -240,11 +240,11 @@ export class RestaurantAgent extends TripPlanningAgent {
 
   async generateRecommendations(results, task) {
     const startTime = Date.now();
-    console.log('🎯 RestaurantAgent.generateRecommendations: Starting');
-    console.log(`   Input: ${results ? results.length : 0} results`);
+    this.logInfo('🎯 RestaurantAgent.generateRecommendations: Starting');
+    this.logInfo(`   Input: ${results ? results.length : 0} results`);
 
     if (!results || results.length === 0) {
-      console.warn('⚠️ RestaurantAgent: No results to transform');
+      this.logWarn('⚠️ RestaurantAgent: No results to transform');
       return {
         content: {
           recommendations: [],
@@ -255,11 +255,11 @@ export class RestaurantAgent extends TripPlanningAgent {
       };
     }
 
-    console.log('🔍 RestaurantAgent: Transforming Google Places data...');
+    this.logInfo('🔍 RestaurantAgent: Transforming Google Places data...');
 
     // Transform Google Places schema to TripOrchestrator recommendation format
     const recommendations = results.slice(0, 5).map((restaurant, index) => {
-      console.log(`   Processing restaurant ${index + 1}:`, {
+      this.logInfo(`   Processing restaurant ${index + 1}:`, {
         name: restaurant.name,
         rating: restaurant.rating,
         priceRange: restaurant.priceRange,
@@ -301,7 +301,7 @@ export class RestaurantAgent extends TripPlanningAgent {
         }
       };
 
-      console.log(`   ✅ Created recommendation:`, {
+      this.logInfo(`   ✅ Created recommendation:`, {
         name: recommendation.name,
         description: recommendation.description.substring(0, 60) + '...',
         price: `${recommendation.price.currency} ${recommendation.price.amount}`,
@@ -316,7 +316,7 @@ export class RestaurantAgent extends TripPlanningAgent {
     });
 
     const duration = Date.now() - startTime;
-    console.log(`✅ RestaurantAgent: Transformed ${recommendations.length} recommendations in ${duration}ms`);
+    this.logInfo(`✅ RestaurantAgent: Transformed ${recommendations.length} recommendations in ${duration}ms`);
 
     return {
       content: {

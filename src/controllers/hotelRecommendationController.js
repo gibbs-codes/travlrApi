@@ -145,7 +145,7 @@ class HotelRecommendationController extends BaseRecommendationController {
       }, 'Hotel recommendations retrieved successfully'));
 
     } catch (error) {
-      console.error('Get hotel recommendations error:', error);
+      this.log.error('Get hotel recommendations error', { error: error.message, stack: error.stack });
       res.status(500).json({
         success: false,
         error: error.message,

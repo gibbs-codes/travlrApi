@@ -17,7 +17,7 @@ export class AccommodationAgent extends TripPlanningAgent {
 
   async search(criteria) {
     try {
-      console.log('AccommodationAgent searching with criteria:', criteria);
+      this.logInfo('AccommodationAgent searching with criteria:', criteria);
 
       // Validate required criteria
       if (!criteria.destination || !criteria.checkInDate || !criteria.checkOutDate) {
@@ -35,17 +35,17 @@ export class AccommodationAgent extends TripPlanningAgent {
       };
 
       const accommodations = await bookingService.searchHotels(searchParams);
-      console.log(`Found ${accommodations.length} accommodations from RapidAPI`);
+      this.logInfo(`Found ${accommodations.length} accommodations from RapidAPI`);
 
       // Apply client-side filtering
       return this.applyFilters(accommodations, criteria);
 
     } catch (error) {
-      console.error('AccommodationAgent search error:', error);
+      this.logError('AccommodationAgent search error:', error);
 
       // Fallback to mock data if API fails (for development)
       if (process.env.NODE_ENV === 'development') {
-        console.log('Falling back to mock data for development');
+        this.logInfo('Falling back to mock data for development');
         return this.getMockAccommodations(criteria);
       }
 
@@ -54,37 +54,26 @@ export class AccommodationAgent extends TripPlanningAgent {
   }
 
   applyFilters(accommodations, criteria) {
-    console.log('🔍 Applying filters with criteria:', {
-      budgetInfo: criteria.budgetInfo,
+    this.logInfo('🔍 Applying filters with criteria:', {
       minRating: criteria.minRating,
       accommodationType: criteria.accommodationType,
       requiredAmenities: criteria.requiredAmenities,
       currency: criteria.currency || 'USD'
     });
-    console.log('💡 Note: Budget is informational only - all price points will be shown');
 
     // Use more lenient defaults
     const effectiveMinRating = criteria.minRating && criteria.minRating > 0 ?
       Math.min(criteria.minRating, 3.0) : 3.0;
 
-    console.log(`Using minRating: ${effectiveMinRating} (original: ${criteria.minRating})`);
+    this.logInfo(`Using minRating: ${effectiveMinRating} (original: ${criteria.minRating})`);
 
     const expectedCurrency = criteria.currency || 'USD';
-    const userBudget = criteria.budgetInfo?.accommodation;
 
     const filtered = accommodations.filter(accommodation => {
       // Currency validation - warn if mismatch but don't filter out
       if (accommodation.currency && accommodation.currency !== expectedCurrency) {
-        console.warn(`⚠️ ${accommodation.name}: Currency mismatch (${accommodation.currency} vs expected ${expectedCurrency})`);
+        this.logWarn(`⚠️ ${accommodation.name}: Currency mismatch (${accommodation.currency} vs expected ${expectedCurrency})`);
       }
-
-      // Price info logging - NO FILTERING, just informational
-      if (userBudget && accommodation.price > userBudget) {
-        console.log(`ℹ️  ${accommodation.name}: Above user budget ($${accommodation.price} > $${userBudget}) but including anyway`);
-      } else if (userBudget) {
-        console.log(`✅ ${accommodation.name}: Within user budget ($${accommodation.price} ≤ $${userBudget})`);
-      }
-      // NO RETURN FALSE - we don't filter by price anymore
 
       // Rating filter - handle rating scale conversion
       let convertedRating = accommodation.rating;
@@ -97,17 +86,17 @@ export class AccommodationAgent extends TripPlanningAgent {
         // RapidAPI returns 0-1 scale (e.g., 0.85 = 8.5/10)
         // Convert to 0-10 scale, then to 0-5 scale
         convertedRating = (convertedRating * 10) / 2;
-        console.log(`🔄 ${accommodation.name}: Converted rating from ${originalRating} to ${convertedRating.toFixed(2)}/5`);
+        this.logInfo(`🔄 ${accommodation.name}: Converted rating from ${originalRating} to ${convertedRating.toFixed(2)}/5`);
       }
 
       if (convertedRating < effectiveMinRating) {
-        console.log(`❌ ${accommodation.name}: Rating too low (original: ${originalRating}, converted: ${convertedRating.toFixed(2)}/5 < ${effectiveMinRating})`);
+        this.logInfo(`❌ ${accommodation.name}: Rating too low (original: ${originalRating}, converted: ${convertedRating.toFixed(2)}/5 < ${effectiveMinRating})`);
         return false;
       }
 
       // Accommodation type filter
       if (criteria.accommodationType && accommodation.type !== criteria.accommodationType) {
-        console.log(`❌ ${accommodation.name}: Type mismatch (${accommodation.type} !== ${criteria.accommodationType})`);
+        this.logInfo(`❌ ${accommodation.name}: Type mismatch (${accommodation.type} !== ${criteria.accommodationType})`);
         return false;
       }
 
@@ -118,7 +107,7 @@ export class AccommodationAgent extends TripPlanningAgent {
           amenity => hotelAmenities.includes(amenity.toLowerCase())
         );
         if (!hasAllAmenities) {
-          console.log(`❌ ${accommodation.name}: Missing required amenities`);
+          this.logInfo(`❌ ${accommodation.name}: Missing required amenities`);
           return false;
         }
       }
@@ -126,7 +115,7 @@ export class AccommodationAgent extends TripPlanningAgent {
       return true;
     });
 
-    console.log(`✅ Filter results: ${filtered.length}/${accommodations.length} hotels passed filters`);
+    this.logInfo(`✅ Filter results: ${filtered.length}/${accommodations.length} hotels passed filters`);
     return filtered;
   }
 
@@ -253,7 +242,7 @@ Be conversational and helpful, like a knowledgeable travel agent.
         }
       };
     } catch (error) {
-      console.error('AI recommendation generation failed:', error);
+      this.logError('AI recommendation generation failed:', error);
       
       // Fallback to rule-based recommendations
       const topHotels = results.slice(0, 3).map((hotel, index) =>

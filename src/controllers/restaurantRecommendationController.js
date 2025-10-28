@@ -153,7 +153,7 @@ class RestaurantRecommendationController extends BaseRecommendationController {
       }, 'Restaurant recommendations retrieved successfully'));
 
     } catch (error) {
-      console.error('Get restaurant recommendations error:', error);
+      this.log.error('Get restaurant recommendations error', { error: error.message, stack: error.stack });
       res.status(500).json({
         success: false,
         error: error.message,

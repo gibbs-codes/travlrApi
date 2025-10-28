@@ -2,15 +2,18 @@ import { TripOrchestrator } from '../agents/tripOrchestrator.js';
 import { Trip, Recommendation } from '../models/index.js';
 import databaseService from '../services/database.js';
 import { formatSuccess } from '../middleware/validation.js';
+import logger from '../utils/logger.js';
+
+const log = logger.child({ scope: 'TripController' });
 
 // Helper function to execute orchestrator asynchronously
 async function executeOrchestratorAsync(tripId, tripRequest) {
   try {
-    console.log(`🚀 Starting orchestrator execution for trip ${tripId}`);
+    log.info(`🚀 Starting orchestrator execution for trip ${tripId}`);
 
     // Log which agents will be executed
     const agentsToRun = tripRequest.agentsToRun || ['flight', 'accommodation', 'activity', 'restaurant'];
-    console.log(`🎯 Executing agents: ${agentsToRun.join(', ')}`);
+    log.info(`🎯 Executing agents: ${agentsToRun.join(', ')}`);
 
     // Create orchestrator instance
     const orchestrator = new TripOrchestrator({}, tripId);
@@ -18,11 +21,11 @@ async function executeOrchestratorAsync(tripId, tripRequest) {
     // Execute the orchestrator (tripRequest contains agentsToRun)
     const result = await orchestrator.execute(tripRequest, tripId);
 
-    console.log(`✅ Orchestrator execution completed for trip ${tripId}`);
+    log.info(`✅ Orchestrator execution completed for trip ${tripId}`);
     return result;
 
   } catch (error) {
-    console.error(`❌ Orchestrator execution failed for trip ${tripId}:`, error);
+    log.error(`❌ Orchestrator execution failed for trip ${tripId}: ${error.message}`, { stack: error.stack });
     throw error;
   }
 }
@@ -77,7 +80,7 @@ export const getTripById = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get trip error:', error);
+    log.error('Get trip error', { error: error.message, stack: error.stack });
     res.status(500).json({
       success: false,
       error: error.message,
@@ -131,7 +134,7 @@ export const getTripStatus = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get trip status error:', error);
+    log.error('Get trip status error', { error: error.message, stack: error.stack });
     res.status(500).json({
       success: false,
       error: error.message,
@@ -152,7 +155,6 @@ export const createTrip = async (req, res) => {
       departureDate,
       returnDate,
       travelers = 1,
-      budget = {},
       preferences = {},
       interests = ['cultural', 'food'],
       createdBy = 'anonymous',
@@ -226,11 +228,6 @@ export const createTrip = async (req, res) => {
       travelers: travelerInfo,
       preferences: {
         interests,
-        budget: {
-          total: budget.total,
-          currency: budget.currency || 'USD',
-          breakdown: budget
-        },
         accommodation: {
           type: preferences.accommodationType || 'any',
           minRating: preferences.minHotelRating || 3,
@@ -243,8 +240,7 @@ export const createTrip = async (req, res) => {
         },
         dining: {
           dietaryRestrictions: preferences.dietaryRestrictions || [],
-          cuisinePreferences: preferences.cuisines || [],
-          priceRange: preferences.diningBudget || 'mixed'
+          cuisinePreferences: preferences.cuisines || []
         },
         accessibility: preferences.accessibility || {}
       },
@@ -277,11 +273,11 @@ export const createTrip = async (req, res) => {
     };
 
     const trip = await Trip.create(tripData);
-    console.log(`✅ Created trip ${trip.tripId} for ${destination}`);
-    console.log(`🎯 Agents to run: ${selectedAgents.join(', ')}`);
+    log.info(`✅ Created trip ${trip.tripId} for ${destination}`);
+    log.info(`🎯 Agents to run: ${selectedAgents.join(', ')}`);
     if (selectedAgents.length < VALID_AGENTS.length) {
       const skippedAgents = VALID_AGENTS.filter(a => !selectedAgents.includes(a));
-      console.log(`⏭️  Skipped agents: ${skippedAgents.join(', ')}`);
+      log.info(`⏭️  Skipped agents: ${skippedAgents.join(', ')}`);
     }
 
     // Calculate estimated completion time (assuming 30-60 seconds per agent, 5 agents)
@@ -331,15 +327,15 @@ export const createTrip = async (req, res) => {
     if (triggerOrchestrator) {
       executeOrchestratorAsync(trip._id, {
         destination, origin, departureDate, returnDate,
-        travelers: travelerInfo.count, budget, preferences, interests,
+        travelers: travelerInfo.count, preferences, interests,
         agentsToRun: selectedAgents
       }).catch(error => {
-        console.error(`Background orchestrator execution failed for trip ${trip._id}:`, error);
+        log.error(`Background orchestrator execution failed for trip ${trip._id}: ${error.message}`, { stack: error.stack });
       });
     }
 
   } catch (error) {
-    console.error('Trip creation error:', error);
+    log.error('Trip creation error', { error: error.message, stack: error.stack });
     res.status(500).json({
       success: false,
       error: error.message,
@@ -443,7 +439,7 @@ export const selectRecommendations = async (req, res) => {
     ));
 
   } catch (error) {
-    console.error('Selection update error:', error);
+    log.error('Selection update error', { error: error.message, stack: error.stack });
     res.status(500).json({
       success: false,
       error: error.message,
@@ -526,7 +522,7 @@ export const rerunAgents = async (req, res) => {
       await Trip.findByIdAndUpdate(trip._id, removedRecommendations);
     }
 
-    console.log(`🔄 Re-running agents: ${agentsToRerun.join(', ')}`);
+    log.info(`🔄 Re-running agents: ${agentsToRerun.join(', ')}`);
 
     res.json(formatSuccess(
       {
@@ -547,25 +543,23 @@ export const rerunAgents = async (req, res) => {
       departureDate: trip.dates.departureDate.toISOString().split('T')[0],
       returnDate: trip.dates.returnDate?.toISOString().split('T')[0],
       travelers: trip.travelers.count,
-      budget: trip.preferences.budget?.breakdown || {},
       preferences: {
         accommodationType: trip.preferences.accommodation?.type,
         minHotelRating: trip.preferences.accommodation?.minRating,
         flightClass: trip.preferences.transportation?.flightClass,
         nonStopFlights: trip.preferences.transportation?.preferNonStop,
-        cuisines: trip.preferences.dining?.cuisinePreferences,
-        diningBudget: trip.preferences.dining?.priceRange
+        cuisines: trip.preferences.dining?.cuisinePreferences
       },
       interests: trip.preferences.interests,
       agentsToRun: agentsToRerun
     };
 
     executeOrchestratorAsync(trip._id, tripRequest).catch(error => {
-      console.error(`Background orchestrator rerun failed for trip ${trip._id}:`, error);
+      log.error(`Background orchestrator rerun failed for trip ${trip._id}: ${error.message}`, { stack: error.stack });
     });
 
   } catch (error) {
-    console.error('Agent rerun error:', error);
+    log.error('Agent rerun error', { error: error.message, stack: error.stack });
     res.status(500).json({
       success: false,
       error: error.message,
@@ -727,9 +721,9 @@ export const startAgents = async (req, res) => {
       { new: true }
     );
 
-    console.log(`🎯 Starting agents [${agents.join(', ')}] for trip ${tripId}`);
+    log.info(`🎯 Starting agents [${agents.join(', ')}] for trip ${tripId}`);
     if (reason) {
-      console.log(`   Reason: ${reason}`);
+      log.info(`   Reason: ${reason}`);
     }
 
     // Build trip request object for orchestrator
@@ -739,7 +733,6 @@ export const startAgents = async (req, res) => {
       departureDate: trip.dates.departureDate,
       returnDate: trip.dates.returnDate,
       travelers: trip.travelers.count,
-      budget: trip.preferences?.budget || {},
       preferences: trip.preferences || {},
       interests: trip.preferences?.interests || [],
       agentsToRun: agents
@@ -747,7 +740,7 @@ export const startAgents = async (req, res) => {
 
     // Execute orchestrator asynchronously (don't await)
     executeOrchestratorAsync(trip._id, tripRequest).catch(error => {
-      console.error(`Background orchestrator execution failed for trip ${trip._id}:`, error);
+      log.error(`Background orchestrator execution failed for trip ${trip._id}: ${error.message}`, { stack: error.stack });
     });
 
     // Return success response immediately
@@ -762,7 +755,7 @@ export const startAgents = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Start agents error:', error);
+    log.error('Start agents error', { error: error.message, stack: error.stack });
     res.status(500).json({
       success: false,
       error: error.message,
@@ -770,4 +763,3 @@ export const startAgents = async (req, res) => {
     });
   }
 };
-

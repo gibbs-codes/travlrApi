@@ -18,10 +18,6 @@ async function testTripOrchestratorWithActivity() {
     returnDate: '2024-04-22',
     interests: ['art', 'food', 'culture'],
     travelers: 2,
-    budget: {
-      total: 2000,
-      activities: 200
-    },
     preferences: {
       accommodationType: 'hotel',
       activityLevel: 'easy'
@@ -35,8 +31,7 @@ async function testTripOrchestratorWithActivity() {
       criteria: {
         destination: tripRequest.destination,
         interests: tripRequest.interests,
-        travelersCount: tripRequest.travelers,
-        budget: tripRequest.budget.activities
+        travelersCount: tripRequest.travelers
       }
     });
 

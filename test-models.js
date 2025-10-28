@@ -166,17 +166,6 @@ async function testModels() {
       },
       preferences: {
         interests: ['cultural', 'food'],
-        budget: {
-          total: 3000,
-          currency: 'USD',
-          breakdown: {
-            flight: 1000,
-            accommodation: 900,
-            food: 500,
-            activities: 400,
-            transportation: 200
-          }
-        },
         accommodation: {
           type: 'hotel',
           minRating: 4
@@ -331,7 +320,6 @@ async function testModels() {
       .populate('selectedRecommendations.transportation.recommendation');
 
     console.log(`📊 Total selected recommendations: ${finalTrip.totalSelectedRecommendations}`);
-    console.log(`💰 Estimated budget: $${finalTrip.estimatedBudget}`);
     console.log(`📅 Duration: ${finalTrip.durationDays} days\n`);
 
     console.log('🎉 All tests passed successfully!');

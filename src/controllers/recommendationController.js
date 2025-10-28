@@ -12,6 +12,7 @@
 import { Trip, Recommendation } from '../models/index.js';
 import { TripOrchestrator } from '../agents/tripOrchestrator.js';
 import { formatSuccess } from '../middleware/validation.js';
+import logger from '../utils/logger.js';
 
 /**
  * Base class for recommendation controllers
@@ -21,6 +22,7 @@ export class BaseRecommendationController {
   constructor(agentType, displayName) {
     this.agentType = agentType; // 'flight', 'accommodation', 'activity', 'restaurant', 'transportation'
     this.displayName = displayName; // 'Flight', 'Hotel', etc.
+    this.log = logger.child({ scope: `${displayName}RecommendationController` });
   }
 
   /**
@@ -141,7 +143,7 @@ export class BaseRecommendationController {
       }, `${this.displayName} recommendations retrieved successfully`));
 
     } catch (error) {
-      console.error(`Get ${this.agentType} recommendations error:`, error);
+      this.log.error(`Get ${this.agentType} recommendations error: ${error.message}`, { stack: error.stack });
       res.status(500).json({
         success: false,
         error: error.message,
@@ -221,7 +223,7 @@ export class BaseRecommendationController {
       }, `${this.displayName} recommendation selected successfully`));
 
     } catch (error) {
-      console.error(`Select ${this.agentType} recommendation error:`, error);
+      this.log.error(`Select ${this.agentType} recommendation error: ${error.message}`, { stack: error.stack });
       res.status(500).json({
         success: false,
         error: error.message,
@@ -282,11 +284,11 @@ export class BaseRecommendationController {
 
       // Execute orchestrator for this agent asynchronously
       this.executeAgentAsync(trip._id, trip).catch(error => {
-        console.error(`Background ${this.agentType} agent execution failed:`, error);
+        this.log.error(`Background ${this.agentType} agent execution failed: ${error.message}`, { stack: error.stack });
       });
 
     } catch (error) {
-      console.error(`Rerun ${this.agentType} agent error:`, error);
+      this.log.error(`Rerun ${this.agentType} agent error: ${error.message}`, { stack: error.stack });
       res.status(500).json({
         success: false,
         error: error.message,
@@ -300,7 +302,7 @@ export class BaseRecommendationController {
    */
   async executeAgentAsync(tripId, trip) {
     try {
-      console.log(`🚀 Starting ${this.agentType} agent execution for trip ${tripId}`);
+      this.log.info(`🚀 Starting ${this.agentType} agent execution for trip ${tripId}`);
 
       const orchestrator = new TripOrchestrator({}, tripId);
 
@@ -311,14 +313,12 @@ export class BaseRecommendationController {
         departureDate: trip.dates.departureDate.toISOString().split('T')[0],
         returnDate: trip.dates.returnDate?.toISOString().split('T')[0],
         travelers: trip.travelers.count,
-        budget: trip.preferences.budget?.breakdown || {},
         preferences: {
           accommodationType: trip.preferences.accommodation?.type,
           minHotelRating: trip.preferences.accommodation?.minRating,
           flightClass: trip.preferences.transportation?.flightClass,
           nonStopFlights: trip.preferences.transportation?.preferNonStop,
-          cuisines: trip.preferences.dining?.cuisinePreferences,
-          diningBudget: trip.preferences.dining?.priceRange
+          cuisines: trip.preferences.dining?.cuisinePreferences
         },
         interests: trip.preferences.interests
       };
@@ -326,10 +326,10 @@ export class BaseRecommendationController {
       // Execute only this agent
       await orchestrator.execute(tripRequest, tripId);
 
-      console.log(`✅ ${this.agentType} agent execution completed for trip ${tripId}`);
+      this.log.info(`✅ ${this.agentType} agent execution completed for trip ${tripId}`);
 
     } catch (error) {
-      console.error(`❌ ${this.agentType} agent execution failed:`, error);
+      this.log.error(`❌ ${this.agentType} agent execution failed: ${error.message}`, { stack: error.stack });
       throw error;
     }
   }
@@ -373,7 +373,7 @@ export class BaseRecommendationController {
       }, `${this.displayName} recommendation retrieved successfully`));
 
     } catch (error) {
-      console.error(`Get ${this.agentType} recommendation by ID error:`, error);
+      this.log.error(`Get ${this.agentType} recommendation by ID error: ${error.message}`, { stack: error.stack });
       res.status(500).json({
         success: false,
         error: error.message,

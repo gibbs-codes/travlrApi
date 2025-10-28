@@ -1,14 +1,46 @@
 import { AIProviderFactory } from '../services/aiProvider.js';
+import logger from '../utils/logger.js';
 
 export class BaseAgent {
   constructor(name, capabilities = [], aiConfig = {}) {
     this.name = name;
     this.capabilities = capabilities;
     this.isActive = false;
+    this.logger = logger.child({ scope: name });
     this.aiProvider = AIProviderFactory.createProvider(
       aiConfig.provider || process.env.AI_PROVIDER || 'openai',
       aiConfig
     );
+  }
+
+  formatLogArgs(args) {
+    return args.map((arg) => {
+      if (typeof arg === 'string') return arg;
+      if (arg instanceof Error) {
+        return `${arg.message}\n${arg.stack}`;
+      }
+      try {
+        return JSON.stringify(arg);
+      } catch {
+        return String(arg);
+      }
+    }).join(' ');
+  }
+
+  logDebug(...args) {
+    this.logger.debug(this.formatLogArgs(args));
+  }
+
+  logInfo(...args) {
+    this.logger.info(this.formatLogArgs(args));
+  }
+
+  logWarn(...args) {
+    this.logger.warn(this.formatLogArgs(args));
+  }
+
+  logError(...args) {
+    this.logger.error(this.formatLogArgs(args));
   }
 
   async execute(_task) {
@@ -25,12 +57,12 @@ export class BaseAgent {
 
   activate() {
     this.isActive = true;
-    console.log(`${this.name} agent activated`);
+    this.logDebug(`${this.name} agent activated`);
   }
 
   deactivate() {
     this.isActive = false;
-    console.log(`${this.name} agent deactivated`);
+    this.logDebug(`${this.name} agent deactivated`);
   }
 
   getStatus() {

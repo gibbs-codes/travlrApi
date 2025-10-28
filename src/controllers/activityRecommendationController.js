@@ -160,7 +160,7 @@ class ActivityRecommendationController extends BaseRecommendationController {
       }, 'Activity recommendations retrieved successfully'));
 
     } catch (error) {
-      console.error('Get activity recommendations error:', error);
+      this.log.error('Get activity recommendations error', { error: error.message, stack: error.stack });
       res.status(500).json({
         success: false,
         error: error.message,

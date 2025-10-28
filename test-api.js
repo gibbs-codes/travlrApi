@@ -48,7 +48,6 @@ async function testTripPlanningEndpoint() {
       console.log('✅ Trip planning test passed!');
       console.log('📊 Trip Summary:');
       console.log(`   Destination: ${data.data.tripSummary.destination}`);
-      console.log(`   Budget: $${data.data.tripSummary.budget.total}`);
       console.log(`   Confidence: ${data.data.tripSummary.confidence}%`);
       console.log('📋 Recommendations found:');
       console.log(`   Flights: ${data.data.recommendations?.flights?.length || 0}`);

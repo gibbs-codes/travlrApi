@@ -29,13 +29,6 @@ async function createTrip() {
       returnDate,
       travelers: 2,
       interests: ['food', 'cultural'],
-      budget: {
-        total: 4000,
-        flight: 1500,
-        accommodation: 1800,
-        activities: 400,
-        food: 300
-      },
       preferences: {
         flightClass: 'economy',
         accommodationType: 'hotel',

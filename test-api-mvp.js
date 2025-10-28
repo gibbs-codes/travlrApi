@@ -60,11 +60,7 @@ async function testCreateTrip() {
       infants: 0
     },
     preferences: {
-      interests: ["cultural", "food"],
-      budget: {
-        total: 2000,
-        currency: "USD"
-      }
+      interests: ["cultural", "food"]
     },
     collaboration: {
       createdBy: "test_user"

@@ -1,4 +1,7 @@
 import axios from 'axios';
+import logger from '../utils/logger.js';
+
+const log = logger.child({ scope: 'GoogleMapsService' });
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -95,7 +98,7 @@ class GoogleMapsService {
         }
       }
 
-      console.log(`Making Google Directions API request: ${origin} to ${destination} via ${travelMode}`);
+      log.debug(`Making Google Directions API request: ${origin} to ${destination} via ${travelMode}`);
 
       // Make API request
       const response = await axios.get(this.directionsUrl, {
@@ -479,8 +482,7 @@ class GoogleMapsService {
    * Handle general errors
    */
   handleError(error, context) {
-    console.error('Google Maps Service Error:', error.message);
-    console.error('Context:', context);
+    log.error('Google Maps Service Error', { error: error.message, context });
 
     if (error.code === 'ECONNABORTED') {
       throw new Error('Request timeout - Google Maps API did not respond');
@@ -506,14 +508,14 @@ class GoogleMapsService {
     
     for (const mode of modes) {
       try {
-        console.log(`Getting ${mode} directions from ${origin} to ${destination}`);
+        log.debug(`Getting ${mode} directions from ${origin} to ${destination}`);
         const result = await this.getDirections(origin, destination, mode, options);
         
         if (result.routes && result.routes.length > 0) {
           results.push(...result.routes);
         }
       } catch (error) {
-        console.warn(`Failed to get ${mode} directions:`, error.message);
+        log.warn(`Failed to get ${mode} directions: ${error.message}`);
         // Continue with other modes
       }
     }

@@ -50,7 +50,7 @@ export class TransportationAgent extends TripPlanningAgent {
       });
 
     } catch (error) {
-      console.log(`Google Directions API unavailable, using fallback data: ${error.message}`);
+      this.logInfo(`Google Directions API unavailable, using fallback data: ${error.message}`);
       return this.getMockTransportOptions(criteria);
     }
   }
@@ -238,11 +238,11 @@ export class TransportationAgent extends TripPlanningAgent {
 
   async generateRecommendations(results, task) {
     const startTime = Date.now();
-    console.log('🎯 TransportationAgent.generateRecommendations: Starting');
-    console.log(`   Input: ${results ? results.length : 0} results`);
+    this.logInfo('🎯 TransportationAgent.generateRecommendations: Starting');
+    this.logInfo(`   Input: ${results ? results.length : 0} results`);
 
     if (!results || results.length === 0) {
-      console.warn('⚠️ TransportationAgent: No results to transform');
+      this.logWarn('⚠️ TransportationAgent: No results to transform');
       return {
         content: {
           recommendations: [],
@@ -253,11 +253,11 @@ export class TransportationAgent extends TripPlanningAgent {
       };
     }
 
-    console.log('🔍 TransportationAgent: Transforming transportation data...');
+    this.logInfo('🔍 TransportationAgent: Transforming transportation data...');
 
     // Transform to TripOrchestrator recommendation format
     const recommendations = results.slice(0, 5).map((option, index) => {
-      console.log(`   Processing option ${index + 1}:`, {
+      this.logInfo(`   Processing option ${index + 1}:`, {
         type: option.type,
         provider: option.provider,
         service: option.service,
@@ -294,7 +294,7 @@ export class TransportationAgent extends TripPlanningAgent {
         }
       };
 
-      console.log(`   Created recommendation:`, {
+      this.logInfo(`   Created recommendation:`, {
         name: recommendation.name,
         type: recommendation.agentMetadata.transportType,
         price: recommendation.price.amount
@@ -304,7 +304,7 @@ export class TransportationAgent extends TripPlanningAgent {
     });
 
     const duration = Date.now() - startTime;
-    console.log(`✅ TransportationAgent: Transformed ${recommendations.length} recommendations in ${duration}ms`);
+    this.logInfo(`✅ TransportationAgent: Transformed ${recommendations.length} recommendations in ${duration}ms`);
 
     return {
       content: {

@@ -6,6 +6,7 @@ import { RestaurantAgent } from './restaurantAgent.js';
 import { Trip, Recommendation } from '../models/index.js';
 import databaseService from '../services/database.js';
 import geographicService from '../services/geographicService.js';
+import logger from '../utils/logger.js';
 
 export class TripOrchestrator extends BaseAgent {
   constructor(aiConfig = {}, tripId = null) {
@@ -17,16 +18,16 @@ export class TripOrchestrator extends BaseAgent {
 
     this.tripId = tripId;
     this.trip = null;
+    this.logger = logger.child({ scope: 'TripOrchestrator' });
     this.executionContext = {
       hotelLocation: null,
       selectedActivities: [],
-      budgetTracking: {
-        allocated: {},
-        spent: {},
-        remaining: {}
-      },
       geographicClusters: []
     };
+
+    this.logInfo = this.logInfo.bind(this);
+    this.logWarn = this.logWarn.bind(this);
+    this.logError = this.logError.bind(this);
 
     // Initialize specialized agents
     this.agents = {
@@ -65,7 +66,6 @@ export class TripOrchestrator extends BaseAgent {
       tripSummary: {
         destination: '',
         dates: { departure: '', return: '' },
-        budget: { total: 0, breakdown: {} },
         confidence: 0,
         geographicCoverage: 0
       },
@@ -81,10 +81,35 @@ export class TripOrchestrator extends BaseAgent {
         searchCriteria: {},
         executionTime: '',
         agentResults: {},
-        budgetValidation: {},
         geographicAnalysis: {}
       }
     };
+  }
+
+  formatLogArgs(args) {
+    return args.map((arg) => {
+      if (typeof arg === 'string') return arg;
+      if (arg instanceof Error) {
+        return `${arg.message}\n${arg.stack}`;
+      }
+      try {
+        return JSON.stringify(arg);
+      } catch {
+        return String(arg);
+      }
+    }).join(' ');
+  }
+
+  logInfo(...args) {
+    this.logger.info(this.formatLogArgs(args));
+  }
+
+  logWarn(...args) {
+    this.logger.warn(this.formatLogArgs(args));
+  }
+
+  logError(...args) {
+    this.logger.error(this.formatLogArgs(args));
   }
 
   async execute(tripRequest, tripId = null) {
@@ -99,12 +124,11 @@ export class TripOrchestrator extends BaseAgent {
         await this.loadTripFromDatabase();
       }
 
-      console.log(`Starting enhanced trip planning for: ${tripRequest.destination}`);
+      this.logInfo(`Starting enhanced trip planning for: ${tripRequest.destination}`);
       await this.updateTripStatus('in_progress', { startedAt: new Date() });
 
-      // Extract and validate trip criteria with budget tracking
+      // Extract and validate trip criteria
       const criteria = this.extractCriteria(tripRequest);
-      this.initializeBudgetTracking(criteria);
 
       // Determine which agents to run
       const agentsToRun = tripRequest.agentsToRun;
@@ -116,25 +140,25 @@ export class TripOrchestrator extends BaseAgent {
         ? agentsToRun
         : allAgents;
 
-      console.log(`🎯 TripOrchestrator will execute agents: ${requestedAgents.join(', ')}`);
+      this.logInfo(`🎯 TripOrchestrator will execute agents: ${requestedAgents.join(', ')}`);
 
       // Log skipped agents if any
       const skippedAgents = allAgents.filter(a => !requestedAgents.includes(a));
       if (skippedAgents.length > 0) {
-        console.log(`⏭️  Skipping agents: ${skippedAgents.join(', ')}`);
+        this.logInfo(`⏭️  Skipping agents: ${skippedAgents.join(', ')}`);
       }
 
       if (agentsToRun && Array.isArray(agentsToRun) && agentsToRun.length > 0) {
         // Use selective agent execution
-        console.log(`🎯 Selective execution mode enabled`);
+        this.logInfo(`🎯 Selective execution mode enabled`);
         agentResults = await this.executeSelectedAgents(agentsToRun, criteria);
       } else {
         // Execute all agents (backward compatibility)
-        console.log(`🎯 Full execution mode: all agents`);
+        this.logInfo(`🎯 Full execution mode: all agents`);
         agentResults = await this.executeAgentsWithDependencies(criteria, allAgents);
       }
       
-      console.log('Enhanced agent execution completed:', {
+      this.logInfo('Enhanced agent execution completed:', {
         totalAgents: agentResults.length,
         successful: agentResults.filter(r => r.success).length,
         failed: agentResults.filter(r => !r.success).length
@@ -168,7 +192,6 @@ export class TripOrchestrator extends BaseAgent {
             ...finalPlan.metadata,
             executionTime: `${executionTime}ms`,
             agentResults,
-            budgetAnalysis: this.executionContext.budgetTracking,
             geographicAnalysis: this.executionContext.geographicClusters
           }
         },
@@ -176,7 +199,7 @@ export class TripOrchestrator extends BaseAgent {
       };
 
     } catch (error) {
-      console.error('Trip orchestrator execution failed:', error);
+      this.logError('Trip orchestrator execution failed:', error);
 
       // Update trip with error status
       await this.updateTripStatus('failed', {
@@ -207,10 +230,10 @@ export class TripOrchestrator extends BaseAgent {
       this.trip = await Trip.findById(this.tripId);
       
       if (this.trip) {
-        console.log(`Loaded trip ${this.trip.tripId} from database`);
+        this.logInfo(`Loaded trip ${this.trip.tripId} from database`);
       }
     } catch (error) {
-      console.error('Failed to load trip from database:', error);
+      this.logError('Failed to load trip from database:', error);
     }
   }
 
@@ -233,9 +256,9 @@ export class TripOrchestrator extends BaseAgent {
       };
       
       await Trip.findByIdAndUpdate(this.tripId, updateData);
-      console.log(`Updated trip ${this.tripId} status to: ${status}`);
+      this.logInfo(`Updated trip ${this.tripId} status to: ${status}`);
     } catch (error) {
-      console.error('Failed to update trip status:', error);
+      this.logError('Failed to update trip status:', error);
     }
   }
 
@@ -253,7 +276,7 @@ export class TripOrchestrator extends BaseAgent {
 
       await Trip.findByIdAndUpdate(this.tripId, updateData);
     } catch (error) {
-      console.error(`Failed to update ${agentName} agent status:`, error);
+      this.logError(`Failed to update ${agentName} agent status:`, error);
     }
   }
 
@@ -267,7 +290,7 @@ export class TripOrchestrator extends BaseAgent {
     await this.loadTripFromDatabase();
 
     if (!this.trip) {
-      console.warn('Cannot determine trip status - trip not loaded');
+      this.logWarn('Cannot determine trip status - trip not loaded');
       return 'failed';
     }
 
@@ -281,7 +304,7 @@ export class TripOrchestrator extends BaseAgent {
       };
     });
 
-    console.log('📊 Final agent statuses:', agentStatuses);
+    this.logInfo('📊 Final agent statuses:', agentStatuses);
 
     // Check if any agent failed
     const hasFailedAgent = agentStatuses.some(agent => agent.status === 'failed');
@@ -292,17 +315,17 @@ export class TripOrchestrator extends BaseAgent {
     );
 
     if (hasFailedAgent) {
-      console.warn('⚠️ One or more agents failed - marking trip as failed');
+      this.logWarn('⚠️ One or more agents failed - marking trip as failed');
       return 'failed';
     }
 
     if (allCompleted) {
-      console.log('✅ All agents completed successfully - marking trip as recommendations_ready');
+      this.logInfo('✅ All agents completed successfully - marking trip as recommendations_ready');
       return 'recommendations_ready';
     }
 
     // Default to failed if status is unclear
-    console.warn('⚠️ Agent execution status unclear - marking trip as failed');
+    this.logWarn('⚠️ Agent execution status unclear - marking trip as failed');
     return 'failed';
   }
 
@@ -314,9 +337,9 @@ export class TripOrchestrator extends BaseAgent {
 
     try {
       await Trip.findByIdAndUpdate(this.tripId, { status });
-      console.log(`✅ Updated trip status to: ${status}`);
+      this.logInfo(`✅ Updated trip status to: ${status}`);
     } catch (error) {
-      console.error('Failed to update top-level trip status:', error);
+      this.logError('Failed to update top-level trip status:', error);
     }
   }
 
@@ -342,7 +365,7 @@ export class TripOrchestrator extends BaseAgent {
           stack: error?.stack
         });
 
-        console.error(`❌ Failed to normalize ${agentName} recommendation "${rawRecommendation?.name || rawRecommendation?.title || 'Unknown'}":`, message);
+        this.logError(`❌ Failed to normalize ${agentName} recommendation "${rawRecommendation?.name || rawRecommendation?.title || 'Unknown'}":`, message);
       }
     });
 
@@ -371,7 +394,7 @@ export class TripOrchestrator extends BaseAgent {
               stack: writeError.err?.stack
             });
 
-            console.error(`❌ Failed to insert ${agentName} recommendation "${failedEntry?.raw?.name || 'Unknown'}":`, writeError.errmsg || writeError.message);
+            this.logError(`❌ Failed to insert ${agentName} recommendation "${failedEntry?.raw?.name || 'Unknown'}":`, writeError.errmsg || writeError.message);
           }
         } else if (error.errors) {
           Object.values(error.errors).forEach((err) => {
@@ -414,7 +437,7 @@ export class TripOrchestrator extends BaseAgent {
     try {
       await Trip.findByIdAndUpdate(this.tripId, updateOps);
     } catch (error) {
-      console.error(`Failed to update trip with ${agentName} recommendations:`, error);
+      this.logError(`Failed to update trip with ${agentName} recommendations:`, error);
     }
 
     if (this.trip && recommendationIds.length > 0) {
@@ -439,7 +462,7 @@ export class TripOrchestrator extends BaseAgent {
 
     // Debug logging for restaurants
     if (agentName === 'restaurant') {
-      console.log(`🔍 Normalizing restaurant recommendation:`, {
+      this.logInfo(`🔍 Normalizing restaurant recommendation:`, {
         rawName: rawRecommendation.name,
         rawRating: rawRecommendation.rating?.score || rawRecommendation.rating,
         rawPrice: rawRecommendation.price?.amount || rawRecommendation.price,
@@ -471,7 +494,7 @@ export class TripOrchestrator extends BaseAgent {
     const amount = Number(rawAmount);
     const safeAmount = Number.isFinite(amount) && amount >= 0 ? amount : 0;
 
-    let currency = rawRecommendation?.price?.currency || rawRecommendation?.currency || this.trip?.preferences?.budget?.currency || 'USD';
+    let currency = rawRecommendation?.price?.currency || rawRecommendation?.currency || 'USD';
     if (typeof currency === 'string') {
       currency = currency.trim().toUpperCase().slice(0, 3) || 'USD';
     } else {
@@ -481,7 +504,7 @@ export class TripOrchestrator extends BaseAgent {
     // Log currency mismatch if not USD
     const requestedCurrency = rawRecommendation?.requestedCurrency || 'USD';
     if (currency !== requestedCurrency && safeAmount > 0) {
-      console.warn(`⚠️ ${agentName} currency mismatch: expected ${requestedCurrency}, got ${currency} for ${rawRecommendation.name || 'item'} (${safeAmount} ${currency})`);
+      this.logWarn(`⚠️ ${agentName} currency mismatch: expected ${requestedCurrency}, got ${currency} for ${rawRecommendation.name || 'item'} (${safeAmount} ${currency})`);
     }
 
     const rawPriceType = rawRecommendation?.price?.priceType;
@@ -801,14 +824,11 @@ export class TripOrchestrator extends BaseAgent {
 
   // Enhanced Criteria Extraction
   extractCriteria(tripRequest) {
-    // Budget is optional - only use if provided and greater than 0
-    const hasBudget = tripRequest.budget && tripRequest.budget.total && tripRequest.budget.total > 0;
-
     // Standardize currency - default to USD
-    const currency = (tripRequest.budget?.currency || 'USD').toString().toUpperCase();
-    console.log(`💱 Trip currency set to: ${currency}`);
+    const currency = (tripRequest.preferences?.currency || 'USD').toString().toUpperCase();
+    this.logInfo(`💱 Trip currency set to: ${currency}`);
 
-    const baseCriteria = {
+    return {
       // Core trip details
       tripId: this.tripId,
       origin: tripRequest.origin,
@@ -820,25 +840,15 @@ export class TripOrchestrator extends BaseAgent {
       // Currency standardization - ALWAYS pass to all agents
       currency,
 
-      // Budget information (INFORMATIONAL ONLY - not enforced)
-      budgetInfo: hasBudget ? {
-        total: tripRequest.budget.total,
-        flight: tripRequest.budget.flight,
-        accommodation: tripRequest.budget.accommodation,
-        activity: tripRequest.budget.activity,
-        restaurant: tripRequest.budget.restaurant,
-        currency: currency
-      } : null,
-
-      // Flight criteria - NO maxPrice enforcement (budget is informational only)
+      // Flight criteria
       preferNonStop: tripRequest.preferences?.nonStopFlights,
       preferredClass: tripRequest.preferences?.flightClass || 'economy',
 
-      // Accommodation criteria - NO maxPrice enforcement
+      // Accommodation criteria
       checkInDate: tripRequest.departureDate,
       checkOutDate: tripRequest.returnDate,
       accommodationType: tripRequest.preferences?.accommodationType,
-      minRating: tripRequest.preferences?.minRating, // Let agent set defaults, don't enforce 4.0 here
+      minRating: tripRequest.preferences?.minRating,
       requiredAmenities: tripRequest.preferences?.amenities,
 
       // Activity criteria
@@ -848,49 +858,11 @@ export class TripOrchestrator extends BaseAgent {
 
       // Restaurant criteria
       cuisines: tripRequest.preferences?.cuisines,
-      priceRange: tripRequest.preferences?.diningBudget || '$$',
       features: tripRequest.preferences?.restaurantFeatures,
 
       // Context for dependent agents
       executionContext: this.executionContext
     };
-
-    console.log('📊 Extracted criteria - Budget handling:', {
-      hasBudget,
-      budgetIsInformationalOnly: true,
-      budgetTotal: baseCriteria.budgetInfo?.total || 'none',
-      note: 'Budget will not filter results - all options shown'
-    });
-
-    return baseCriteria;
-  }
-
-  initializeBudgetTracking(criteria) {
-    this.executionContext.budgetTracking = {
-      hasUserBudget: !!criteria.budgetInfo,
-      userBudgetTotal: criteria.budgetInfo?.total || null,
-      userBudgetByCategory: criteria.budgetInfo ? {
-        flight: criteria.budgetInfo.flight || null,
-        accommodation: criteria.budgetInfo.accommodation || null,
-        activity: criteria.budgetInfo.activity || null,
-        restaurant: criteria.budgetInfo.restaurant || null
-      } : null,
-      estimatedSpend: {
-        flight: 0,
-        accommodation: 0,
-        activity: 0,
-        restaurant: 0
-      },
-      totalEstimated: 0,
-      note: 'Budget is for user reference only - not enforced by agents',
-      currency: criteria.currency || 'USD'
-    };
-
-    if (criteria.budgetInfo) {
-      console.log(`💰 User budget tracking initialized (informational only):`);
-      console.log(`   Total: ${criteria.currency} ${criteria.budgetInfo.total}`);
-      console.log(`   Note: Agents will show all options regardless of budget`);
-    }
   }
 
   // Smart Agent Execution with Dependencies
@@ -899,8 +871,8 @@ export class TripOrchestrator extends BaseAgent {
     const executedAgents = new Set();
     const skippedAgents = new Set();
 
-    console.log('Starting smart agent execution with dependencies...');
-    console.log('📋 Execution order: accommodation → flights → experiences (activities & restaurants)');
+    this.logInfo('Starting smart agent execution with dependencies...');
+    this.logInfo('📋 Execution order: accommodation → flights → experiences (activities & restaurants)');
 
     for (const phase of this.executionPhases) {
       // Filter agents in this phase to only include those in agentsToRun
@@ -908,7 +880,7 @@ export class TripOrchestrator extends BaseAgent {
 
       // Skip phase if no agents are selected to run
       if (agentsInPhase.length === 0) {
-        console.log(`\n⏭️  Skipping phase: ${phase.description} (no agents selected)`);
+        this.logInfo(`\n⏭️  Skipping phase: ${phase.description} (no agents selected)`);
         // Mark all agents in this phase as skipped
         for (const agentName of phase.agents) {
           if (!agentsToRun.includes(agentName)) {
@@ -922,24 +894,24 @@ export class TripOrchestrator extends BaseAgent {
         continue;
       }
 
-      console.log(`\n🔹 Executing phase: ${phase.description}`);
-      console.log(`   Running agents: ${agentsInPhase.join(', ')}`);
+      this.logInfo(`\n🔹 Executing phase: ${phase.description}`);
+      this.logInfo(`   Running agents: ${agentsInPhase.join(', ')}`);
 
       // Log UI visibility status
       if (phase.uiEnabled === false) {
-        console.log('ℹ️  Note: This phase generates data but UI display is not yet implemented');
+        this.logInfo('ℹ️  Note: This phase generates data but UI display is not yet implemented');
       }
 
       // Check if dependencies are met
       if (phase.dependencies) {
         const missingDeps = phase.dependencies.filter(dep => !executedAgents.has(dep) && !skippedAgents.has(dep));
         if (missingDeps.length > 0) {
-          console.warn(`⚠️ Phase ${phase.phase} missing dependencies: ${missingDeps.join(', ')}`);
+          this.logWarn(`⚠️ Phase ${phase.phase} missing dependencies: ${missingDeps.join(', ')}`);
           continue;
         } else {
           const metDeps = phase.dependencies.filter(dep => executedAgents.has(dep));
           if (metDeps.length > 0) {
-            console.log(`✅ Dependencies met: ${metDeps.join(', ')}`);
+            this.logInfo(`✅ Dependencies met: ${metDeps.join(', ')}`);
           }
         }
       }
@@ -986,8 +958,8 @@ export class TripOrchestrator extends BaseAgent {
       throw new Error(`Invalid agent names: ${invalidAgents.join(', ')}. Valid agents are: ${validAgents.join(', ')}`);
     }
 
-    console.log('Starting selective agent execution...');
-    console.log(`🎯 Requested agents: ${agentNames.join(', ')}`);
+    this.logInfo('Starting selective agent execution...');
+    this.logInfo(`🎯 Requested agents: ${agentNames.join(', ')}`);
 
     // Create filtered execution phases
     const filteredPhases = this.executionPhases
@@ -1003,9 +975,9 @@ export class TripOrchestrator extends BaseAgent {
         if (phase.dependencies) {
           const missingDeps = phase.dependencies.filter(dep => !agentNames.includes(dep));
           if (missingDeps.length > 0) {
-            console.warn(`⚠️  Warning: Phase '${phase.phase}' depends on [${phase.dependencies.join(', ')}] but only [${agentNames.join(', ')}] will run`);
-            console.warn(`   Missing dependencies: ${missingDeps.join(', ')}`);
-            console.warn(`   Execution will proceed but results may be suboptimal`);
+            this.logWarn(`⚠️  Warning: Phase '${phase.phase}' depends on [${phase.dependencies.join(', ')}] but only [${agentNames.join(', ')}] will run`);
+            this.logWarn(`   Missing dependencies: ${missingDeps.join(', ')}`);
+            this.logWarn(`   Execution will proceed but results may be suboptimal`);
           }
         }
 
@@ -1019,11 +991,11 @@ export class TripOrchestrator extends BaseAgent {
       .filter(Boolean); // Remove null phases
 
     // Log execution plan
-    console.log('📋 Filtered execution phases:');
+    this.logInfo('📋 Filtered execution phases:');
     filteredPhases.forEach(phase => {
-      console.log(`   - ${phase.phase}: ${phase.agents.join(', ')}`);
+      this.logInfo(`   - ${phase.phase}: ${phase.agents.join(', ')}`);
       if (phase.skippedAgents.length > 0) {
-        console.log(`     (skipping: ${phase.skippedAgents.join(', ')})`);
+        this.logInfo(`     (skipping: ${phase.skippedAgents.join(', ')})`);
       }
     });
 
@@ -1038,17 +1010,17 @@ export class TripOrchestrator extends BaseAgent {
         completedAt: new Date(),
         message: 'Agent not selected for execution'
       });
-      console.log(`   ⏭️  Marked ${agentName} as skipped`);
+      this.logInfo(`   ⏭️  Marked ${agentName} as skipped`);
     }
 
     // Execute filtered phases
     for (const phase of filteredPhases) {
-      console.log(`\n🔹 Executing phase: ${phase.description}`);
-      console.log(`   Running agents: ${phase.agents.join(', ')}`);
+      this.logInfo(`\n🔹 Executing phase: ${phase.description}`);
+      this.logInfo(`   Running agents: ${phase.agents.join(', ')}`);
 
       // Log UI visibility status
       if (phase.uiEnabled === false) {
-        console.log('ℹ️  Note: This phase generates data but UI display is not yet implemented');
+        this.logInfo('ℹ️  Note: This phase generates data but UI display is not yet implemented');
       }
 
       // Check if dependencies are met (only check against executed agents)
@@ -1057,11 +1029,11 @@ export class TripOrchestrator extends BaseAgent {
         const missingDeps = requestedDeps.filter(dep => !executedAgents.has(dep));
 
         if (missingDeps.length > 0) {
-          console.warn(`⚠️ Phase ${phase.phase} missing dependencies: ${missingDeps.join(', ')}`);
-          console.warn(`   Skipping this phase`);
+          this.logWarn(`⚠️ Phase ${phase.phase} missing dependencies: ${missingDeps.join(', ')}`);
+          this.logWarn(`   Skipping this phase`);
           continue;
         } else if (requestedDeps.length > 0) {
-          console.log(`✅ Dependencies met: ${requestedDeps.join(', ')}`);
+          this.logInfo(`✅ Dependencies met: ${requestedDeps.join(', ')}`);
         }
       }
 
@@ -1086,7 +1058,7 @@ export class TripOrchestrator extends BaseAgent {
       }
     }
 
-    console.log(`\n✅ Selective execution completed: ${executedAgents.size} agents executed, ${skippedAgents.size} agents skipped`);
+    this.logInfo(`\n✅ Selective execution completed: ${executedAgents.size} agents executed, ${skippedAgents.size} agents skipped`);
 
     return allResults;
   }
@@ -1122,7 +1094,7 @@ export class TripOrchestrator extends BaseAgent {
     const startTime = Date.now();
     
     try {
-      console.log(`  Executing ${agentName} agent...`);
+      this.logInfo(`  Executing ${agentName} agent...`);
       await this.updateAgentStatus(agentName, 'running', { startedAt: new Date() });
       
       // Enhance criteria with context for dependent agents
@@ -1151,12 +1123,12 @@ export class TripOrchestrator extends BaseAgent {
           recommendationCount: savedCount
         });
 
-        console.info(`${agent.constructor.name} saved:`, summary);
+        this.logInfo(`${agent.constructor.name} saved:`, summary);
 
         if (statusAfterSave === 'completed') {
-          console.log(`  ✅ ${agentName} completed: ${savedCount} recommendations (${duration}ms)`);
+          this.logInfo(`  ✅ ${agentName} completed: ${savedCount} recommendations (${duration}ms)`);
         } else {
-          console.warn(`  ⚠️ ${agentName} produced ${foundCount} recommendations but none passed validation (${duration}ms)`);
+          this.logWarn(`  ⚠️ ${agentName} produced ${foundCount} recommendations but none passed validation (${duration}ms)`);
         }
 
         return {
@@ -1175,9 +1147,9 @@ export class TripOrchestrator extends BaseAgent {
           errors: [{ message: result.error, timestamp: new Date() }]
         });
         
-        console.info(`${agent.constructor.name} saved:`, { found: 0, saved: 0, errors: 1 });
+        this.logInfo(`${agent.constructor.name} saved:`, { found: 0, saved: 0, errors: 1 });
         
-        console.log(`  ❌ ${agentName} failed: ${result.error} (${duration}ms)`);
+        this.logInfo(`  ❌ ${agentName} failed: ${result.error} (${duration}ms)`);
         
         return { name: agentName, ...result, duration };
       }
@@ -1191,9 +1163,9 @@ export class TripOrchestrator extends BaseAgent {
         errors: [{ message: error.message, timestamp: new Date(), stack: error.stack }]
       });
 
-      console.info(`${agent.constructor.name} saved:`, { found: 0, saved: 0, errors: 1 });
+      this.logInfo(`${agent.constructor.name} saved:`, { found: 0, saved: 0, errors: 1 });
       
-      console.log(`  💥 ${agentName} crashed: ${error.message} (${duration}ms)`);
+      this.logInfo(`  💥 ${agentName} crashed: ${error.message} (${duration}ms)`);
       
       return {
         name: agentName,
@@ -1248,7 +1220,7 @@ export class TripOrchestrator extends BaseAgent {
               address: bestHotel.address || bestHotel.location
             };
             
-            console.log(`  📍 Hotel location set: ${bestHotel.name}`);
+            this.logInfo(`  📍 Hotel location set: ${bestHotel.name}`);
           }
         }
         break;
@@ -1268,12 +1240,9 @@ export class TripOrchestrator extends BaseAgent {
           ...this.executionContext.selectedActivities
         ].filter(Boolean));
         
-        console.log(`  🗺️  Geographic clusters created: ${this.executionContext.geographicClusters.length}`);
+        this.logInfo(`  🗺️  Geographic clusters created: ${this.executionContext.geographicClusters.length}`);
         break;
     }
-    
-    // Update budget tracking
-    this.updateBudgetTracking(agentName, recommendations);
   }
   
   createGeographicClusters(locations) {
@@ -1344,102 +1313,17 @@ export class TripOrchestrator extends BaseAgent {
     return scores.reduce((sum, score) => sum + score, 0) / scores.length;
   }
   
-  updateBudgetTracking(agentName, recommendations) {
-    try {
-      // Ensure budgetTracking exists
-      if (!this.executionContext?.budgetTracking) {
-        console.warn('⚠️  Budget tracking not initialized, skipping update');
-        return;
-      }
-
-      // Ensure estimatedSpend exists - use null-safe initialization
-      if (!this.executionContext.budgetTracking.estimatedSpend || typeof this.executionContext.budgetTracking.estimatedSpend !== 'object') {
-        this.executionContext.budgetTracking.estimatedSpend = {
-          flight: 0,
-          accommodation: 0,
-          activity: 0,
-          restaurant: 0
-        };
-        console.log('💰 Initialized estimatedSpend object');
-      }
-
-      if (!recommendations || recommendations.length === 0) {
-        console.log(`💰 ${agentName}: No recommendations to track`);
-        return;
-      }
-
-      // Validate agentName
-      if (!agentName || typeof agentName !== 'string') {
-        console.warn('⚠️  Invalid agentName for budget tracking:', agentName);
-        return;
-      }
-
-      // Calculate estimate for this agent - handle different price structures
-      const totalEstimate = recommendations.reduce((sum, rec) => {
-        // Try multiple price formats
-        const price = rec?.price?.amount || rec?.price || rec?.cost || 0;
-        return sum + (typeof price === 'number' ? price : 0);
-      }, 0);
-
-      // Safely update the specific agent's estimate
-      // Ensure the estimatedSpend object hasn't been corrupted
-      if (this.executionContext.budgetTracking.estimatedSpend && typeof this.executionContext.budgetTracking.estimatedSpend === 'object') {
-        this.executionContext.budgetTracking.estimatedSpend[agentName] = totalEstimate;
-      } else {
-        console.error('❌ estimatedSpend object was corrupted, reinitializing');
-        this.executionContext.budgetTracking.estimatedSpend = {
-          flight: 0,
-          accommodation: 0,
-          activity: 0,
-          restaurant: 0,
-          [agentName]: totalEstimate
-        };
-      }
-
-      // Recalculate total
-      const allEstimates = Object.values(this.executionContext.budgetTracking.estimatedSpend || {});
-      this.executionContext.budgetTracking.totalEstimated = allEstimates.reduce(
-        (sum, val) => sum + (val || 0),
-        0
-      );
-
-      // Log the update
-      const userBudgetForAgent = this.executionContext.budgetTracking.userBudgetByCategory?.[agentName];
-      console.log(`💰 Budget tracking updated for ${agentName}:`, {
-        recommendationCount: recommendations.length,
-        agentEstimate: `$${totalEstimate.toFixed(2)}`,
-        userBudget: userBudgetForAgent ? `$${userBudgetForAgent}` : 'not set',
-        totalEstimated: `$${this.executionContext.budgetTracking.totalEstimated.toFixed(2)}`,
-        userBudgetTotal: this.executionContext.budgetTracking.userBudgetTotal
-          ? `$${this.executionContext.budgetTracking.userBudgetTotal}`
-          : 'not set'
-      });
-
-    } catch (error) {
-      console.error(`❌ Error updating budget tracking for ${agentName}:`, error.message);
-      console.error('   Stack:', error.stack);
-      console.error('   Context state:', {
-        hasExecutionContext: !!this.executionContext,
-        hasBudgetTracking: !!this.executionContext?.budgetTracking,
-        hasEstimatedSpend: !!this.executionContext?.budgetTracking?.estimatedSpend,
-        agentName,
-        recommendationsCount: recommendations?.length
-      });
-      // Don't throw - budget tracking is informational, shouldn't break the trip
-    }
-  }
-
   // Enhanced Trip Plan Synthesis
   async synthesizeEnhancedTripPlan(agentResults, criteria) {
     const plan = { ...this.tripSchema };
     
-    console.log('Synthesizing enhanced trip plan...');
+    this.logInfo('Synthesizing enhanced trip plan...');
     
     // Populate recommendations from each agent
     const successfulAgents = agentResults.filter(r => r.success);
     const failedAgents = agentResults.filter(r => !r.success);
     
-    console.log(`Successful agents: ${successfulAgents.length}, Failed agents: ${failedAgents.length}`);
+    this.logInfo(`Successful agents: ${successfulAgents.length}, Failed agents: ${failedAgents.length}`);
     
     successfulAgents.forEach(result => {
       if (result.data?.content?.recommendations) {
@@ -1447,8 +1331,6 @@ export class TripOrchestrator extends BaseAgent {
       }
     });
 
-    // Enhanced budget analysis with actual vs allocated
-    plan.tripSummary.budget = this.calculateEnhancedBudget(plan.recommendations, criteria);
     plan.tripSummary.destination = criteria.destination;
     plan.tripSummary.dates = {
       departure: criteria.departureDate,
@@ -1462,7 +1344,6 @@ export class TripOrchestrator extends BaseAgent {
     plan.itinerary = await this.generateEnhancedItinerary(plan.recommendations, criteria);
     
     // Budget validation and warnings
-    plan.metadata.budgetValidation = this.validateBudgetConstraints(criteria);
     
     // Geographic analysis
     plan.metadata.geographicAnalysis = {
@@ -1483,62 +1364,6 @@ export class TripOrchestrator extends BaseAgent {
     return plan;
   }
   
-  calculateEnhancedBudget(recommendations, criteria) {
-    const breakdown = {};
-    let total = 0;
-    const tracking = this.executionContext.budgetTracking;
-    
-    // Calculate actual costs from recommendations
-    Object.entries(recommendations).forEach(([category, recs]) => {
-      if (recs && recs.length > 0) {
-        const categoryTotal = this.calculateCategoryBudget(category, recs, criteria);
-        breakdown[category] = {
-          estimated: categoryTotal,
-          allocated: tracking.allocated[category] || 0,
-          variance: categoryTotal - (tracking.allocated[category] || 0),
-          recommendations: recs.length
-        };
-        total += categoryTotal;
-      }
-    });
-    
-    return {
-      total,
-      allocated: tracking.totalAllocated,
-      variance: total - tracking.totalAllocated,
-      breakdown,
-      analysis: this.generateBudgetAnalysis(breakdown, criteria)
-    };
-  }
-  
-  calculateCategoryBudget(category, recommendations, criteria) {
-    const topRec = recommendations[0];
-    if (!topRec) return 0;
-    
-    switch (category) {
-      case 'flight':
-        return (topRec.price || 0) * (criteria.travelers || 1);
-      case 'accommodation':
-        const nights = this.calculateNights(criteria.departureDate, criteria.returnDate);
-        return (topRec.price || 0) * nights;
-      case 'activity':
-        return recommendations.slice(0, 3).reduce((sum, activity) => 
-          sum + ((activity.price || 0) * (criteria.travelers || 1)), 0);
-      case 'restaurant':
-        return recommendations.slice(0, 3).reduce((sum, restaurant) =>
-          sum + ((restaurant.averageMeal || restaurant.price || 0) * (criteria.travelers || 1)), 0);
-      default:
-        return topRec.price || 0;
-    }
-  }
-  
-  calculateNights(departureDate, returnDate) {
-    if (!returnDate) return 1;
-    const departure = new Date(departureDate);
-    const returnD = new Date(returnDate);
-    return Math.max(1, Math.ceil((returnD - departure) / (1000 * 60 * 60 * 24)));
-  }
-  
   calculateGeographicCoverage() {
     const clusters = this.executionContext.geographicClusters;
     if (clusters.length === 0) return 0;
@@ -1551,70 +1376,6 @@ export class TripOrchestrator extends BaseAgent {
     // Calculate spread efficiency (fewer clusters = better geographic efficiency)
     const efficiency = Math.max(0, 1 - (clusters.length - 1) / totalLocations);
     return Math.round(efficiency * 100);
-  }
-  
-  validateBudgetConstraints(criteria) {
-    const tracking = this.executionContext.budgetTracking;
-    const warnings = [];
-    const recommendations = [];
-    
-    Object.entries(tracking.spent).forEach(([category, spent]) => {
-      const allocated = tracking.allocated[category] || 0;
-      
-      if (allocated > 0) {
-        const variance = spent - allocated;
-        const percentOver = (variance / allocated) * 100;
-        
-        if (percentOver > 20) {
-          warnings.push(`${category} budget exceeded by ${percentOver.toFixed(1)}%`);
-          recommendations.push(`Consider reducing ${category} selections or increasing budget`);
-        } else if (percentOver > 10) {
-          warnings.push(`${category} budget over by ${percentOver.toFixed(1)}%`);
-        }
-      }
-    });
-    
-    return {
-      isWithinBudget: warnings.length === 0,
-      warnings,
-      recommendations,
-      totalVariance: tracking.spent - tracking.totalAllocated
-    };
-  }
-  
-  generateBudgetAnalysis(breakdown, criteria) {
-    const insights = [];
-    const totalBudget = criteria.totalBudget || 0;
-    
-    if (totalBudget > 0) {
-      Object.entries(breakdown).forEach(([category, data]) => {
-        const percentage = (data.estimated / totalBudget) * 100;
-        
-        if (percentage > 40) {
-          insights.push(`${category} represents ${percentage.toFixed(1)}% of total budget - consider optimizing`);
-        }
-      });
-    }
-    
-    return {
-      insights,
-      recommendedAdjustments: this.generateBudgetRecommendations(breakdown)
-    };
-  }
-  
-  generateBudgetRecommendations(breakdown) {
-    const recs = [];
-    
-    Object.entries(breakdown).forEach(([category, data]) => {
-      if (data.variance > 0 && data.allocated > 0) {
-        const overBy = (data.variance / data.allocated) * 100;
-        if (overBy > 15) {
-          recs.push(`Consider budget-friendly ${category} alternatives or increase allocation by $${data.variance}`);
-        }
-      }
-    });
-    
-    return recs;
   }
   
   assessAgentFailureImpact(agentName) {
@@ -1634,7 +1395,7 @@ export class TripOrchestrator extends BaseAgent {
     const endDate = new Date(criteria.returnDate || criteria.departureDate);
     const days = Math.max(1, Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)));
     
-    console.log(`Generating ${days}-day enhanced itinerary...`);
+    this.logInfo(`Generating ${days}-day enhanced itinerary...`);
     
     const activities = recommendations.activity || [];
     const restaurants = recommendations.restaurant || [];
@@ -1653,7 +1414,6 @@ export class TripOrchestrator extends BaseAgent {
         activities: dayActivities,
         restaurants: dayRestaurants,
         geographicCluster: clusters[i % clusters.length]?.id || null,
-        estimatedBudget: this.calculateDayBudget(dayActivities, dayRestaurants),
         notes: this.generateDayNotes(i, days, dayActivities)
       });
     }
@@ -1692,13 +1452,6 @@ export class TripOrchestrator extends BaseAgent {
     return dayRestaurants;
   }
   
-  calculateDayBudget(activities, restaurants) {
-    const activityCost = activities.reduce((sum, activity) => sum + (activity.price || 0), 0);
-    const restaurantCost = restaurants.reduce((sum, restaurant) => sum + (restaurant.averageMeal || restaurant.price || 0), 0);
-    
-    return activityCost + restaurantCost;
-  }
-  
   generateDayNotes(dayIndex, totalDays, activities) {
     if (dayIndex === 0) return 'Arrival day - lighter activities recommended';
     if (dayIndex === totalDays - 1) return 'Departure day - plan activities near hotel/airport';
@@ -1708,7 +1461,7 @@ export class TripOrchestrator extends BaseAgent {
 
   // Enhanced Final Recommendations with AI Synthesis
   async generateEnhancedRecommendations(tripPlan, criteria) {
-    console.log('Generating enhanced final recommendations with AI synthesis...');
+    this.logInfo('Generating enhanced final recommendations with AI synthesis...');
     
     const prompt = `
 Analyze this comprehensive trip plan and provide enhanced recommendations:
@@ -1717,7 +1470,6 @@ Trip Context:
 - Destination: ${criteria.destination}
 - Dates: ${criteria.departureDate} to ${criteria.returnDate}
 - Travelers: ${criteria.travelers}
-- Budget Analysis: ${JSON.stringify(tripPlan.tripSummary.budget, null, 2)}
 - Geographic Coverage: ${tripPlan.tripSummary.geographicCoverage}%
 
 Recommendation Summary:
@@ -1725,16 +1477,13 @@ ${Object.entries(tripPlan.recommendations).map(([type, recs]) =>
   `${type}: ${recs?.length || 0} options`).join('\
 ')}
 
-Budget Validation:
-${JSON.stringify(tripPlan.metadata.budgetValidation, null, 2)}
-
 Geographic Clusters:
 ${JSON.stringify(tripPlan.metadata.geographicAnalysis?.clusters || [], null, 2)}
 
 Please provide:
 1. Overall trip confidence score (0-100) based on recommendation quality and geographic efficiency
 2. Top insights about the trip plan
-3. Optimization suggestions for budget and logistics
+3. Optimization suggestions for logistics and pacing
 4. Risk assessment and mitigation strategies
 5. Alternative approaches for different preferences
 
@@ -1765,11 +1514,11 @@ Focus on practical, actionable insights for the traveler.
         }
       };
       
-      console.log(`Final trip confidence: ${finalPlan.tripSummary.confidence}%`);
+      this.logInfo(`Final trip confidence: ${finalPlan.tripSummary.confidence}%`);
       return finalPlan;
       
     } catch (error) {
-      console.error('AI synthesis failed, calculating basic confidence:', error.message);
+      this.logError('AI synthesis failed, calculating basic confidence:', error.message);
       
       return {
         ...tripPlan,
@@ -1818,14 +1567,6 @@ Focus on practical, actionable insights for the traveler.
     const geoEfficiency = tripPlan.tripSummary.geographicCoverage / 100;
     finalConfidence += (geoEfficiency - 0.5) * 0.1;
     
-    // Budget compliance bonus/penalty
-    const budgetValidation = tripPlan.metadata.budgetValidation;
-    if (budgetValidation?.isWithinBudget) {
-      finalConfidence += 0.05;
-    } else if (budgetValidation?.warnings?.length > 0) {
-      finalConfidence -= 0.1;
-    }
-    
     // Failed agents penalty
     const failedAgents = tripPlan.metadata.failedAgents || [];
     finalConfidence -= failedAgents.length * 0.1;
@@ -1842,7 +1583,7 @@ Focus on practical, actionable insights for the traveler.
 
   // Enhanced method using GeographicService for itinerary validation
   async validateTripFeasibility(tripPlan, travelPreferences = {}) {
-    console.log('Validating trip feasibility using GeographicService...');
+    this.logInfo('Validating trip feasibility using GeographicService...');
     
     const itineraryFlags = geographicService.flagUnrealisticItineraries(
       tripPlan.itinerary || [],

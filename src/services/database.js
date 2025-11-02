@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { getMongoConfig } from '../config/database.js';
 import { Trip, Recommendation } from '../models/index.js';
+import logger from '../utils/logger.js';
 
 class DatabaseService {
   constructor() {
@@ -11,25 +12,24 @@ class DatabaseService {
   async connect() {
     try {
       if (this.isConnected) {
-        console.log('Already connected to MongoDB');
+        logger.debug('MongoDB connection already established');
         return this.connection;
       }
 
       const config = getMongoConfig();
-      
-      console.log('Connecting to MongoDB...');
+      logger.info('Connecting to MongoDB...', { uri: config.uri });
+
       this.connection = await mongoose.connect(config.uri, config.options);
-      
       this.isConnected = true;
-      console.log('✅ Connected to MongoDB successfully');
-      
+      logger.info('✅ Connected to MongoDB successfully');
+
       // Set up connection event listeners
       this.setupEventListeners();
-      
+
       return this.connection;
     } catch (error) {
-      console.error('❌ MongoDB connection error:', error);
       this.isConnected = false;
+      logger.error('❌ MongoDB connection error', { error: error.message });
       throw error;
     }
   }
@@ -37,49 +37,44 @@ class DatabaseService {
   async disconnect() {
     try {
       if (!this.isConnected) {
-        console.log('Not connected to MongoDB');
+        logger.debug('MongoDB disconnect skipped - no active connection');
         return;
       }
 
       await mongoose.disconnect();
       this.isConnected = false;
       this.connection = null;
-      console.log('✅ Disconnected from MongoDB');
+      logger.info('✅ Disconnected from MongoDB');
     } catch (error) {
-      console.error('❌ Error disconnecting from MongoDB:', error);
+      logger.error('❌ Error disconnecting from MongoDB', { error: error.message });
       throw error;
     }
   }
 
   setupEventListeners() {
     mongoose.connection.on('connected', () => {
-      console.log('Mongoose connected to MongoDB');
+      logger.debug('Mongoose connection event: connected');
     });
 
     mongoose.connection.on('error', (err) => {
-      console.error('Mongoose connection error:', err);
+      logger.error('Mongoose connection error', { error: err.message });
       this.isConnected = false;
     });
 
     mongoose.connection.on('disconnected', () => {
-      console.log('Mongoose disconnected from MongoDB');
+      logger.warn('Mongoose connection event: disconnected');
       this.isConnected = false;
-    });
-
-    // Handle app termination
-    process.on('SIGINT', async () => {
-      await this.disconnect();
-      process.exit(0);
     });
   }
 
   getConnectionStatus() {
+    const connection = mongoose.connection;
     return {
       isConnected: this.isConnected,
-      readyState: mongoose.connection.readyState,
-      host: mongoose.connection.host,
-      port: mongoose.connection.port,
-      name: mongoose.connection.name
+      readyState: connection?.readyState ?? 0,
+      host: connection?.host ?? null,
+      port: connection?.port ?? null,
+      name: connection?.name ?? null
     };
   }
 
@@ -92,14 +87,14 @@ class DatabaseService {
 
   async ensureIndexes() {
     try {
-      console.log('Ensuring database indexes...');
-      
+      logger.info('Ensuring database indexes...');
+
       await Trip.createIndexes();
       await Recommendation.createIndexes();
-      
-      console.log('✅ Database indexes created successfully');
+
+      logger.info('✅ Database indexes created successfully');
     } catch (error) {
-      console.error('❌ Error creating database indexes:', error);
+      logger.error('❌ Error creating database indexes', { error: error.message });
       throw error;
     }
   }

@@ -1,43 +1,55 @@
-import dotenv from 'dotenv';
-dotenv.config();
-
-import express from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
-import travelRoutes from './routes/travel.js';
-import tripRoutes from './routes/trip.js';
-import sharingRoutes from './routes/sharing.js';
+import env from './config/env.js';
+import app from './app.js';
 import databaseService from './services/database.js';
+import logger from './utils/logger.js';
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+let server;
 
-// Initialize database connection
-await databaseService.connect();
+const startServer = async () => {
+  try {
+    await databaseService.connect();
 
-app.use(helmet());
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+    server = app.listen(env.port, () => {
+      logger.info(`Server running on port ${env.port}`);
+    });
 
-app.use('/api/travel', travelRoutes);
-app.use('/api/trip', tripRoutes);
-app.use('/api', sharingRoutes);
+    server.on('close', () => {
+      logger.info('HTTP server closed');
+    });
+  } catch (error) {
+    logger.error('Failed to start server', { error: error.message });
+    process.exit(1);
+  }
+};
 
-app.get('/health', (_req, res) => {
-  const dbStatus = databaseService.getConnectionStatus();
-  res.status(200).json({ 
-    status: 'OK', 
-    message: 'Server is running',
-    database: dbStatus
-  });
+const shutdown = async (signal) => {
+  logger.info(`Received ${signal}. Shutting down gracefully...`);
+
+  try {
+    if (server) {
+      await new Promise((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      });
+    }
+    await databaseService.disconnect();
+    process.exit(0);
+  } catch (error) {
+    logger.error('Error during shutdown', { error: error.message });
+    process.exit(1);
+  }
+};
+
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled promise rejection', { reason });
 });
 
-app.use((err, _req, res, _next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught exception', { error: error.stack || error.message });
+  process.exit(1);
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+['SIGINT', 'SIGTERM'].forEach((signal) => {
+  process.on(signal, () => shutdown(signal));
 });
+
+startServer();

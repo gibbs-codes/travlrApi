@@ -119,45 +119,6 @@ const tripSchema = new mongoose.Schema({
       type: String,
       enum: ['cultural', 'food', 'adventure', 'relaxation', 'nightlife', 'nature', 'shopping', 'history', 'art', 'sports', 'photography', 'wellness']
     }],
-    budget: {
-      total: {
-        type: Number,
-        min: 0
-      },
-      currency: {
-        type: String,
-        default: 'USD',
-        uppercase: true,
-        minlength: 3,
-        maxlength: 3
-      },
-      breakdown: {
-        flight: {
-          type: Number,
-          min: 0
-        },
-        accommodation: {
-          type: Number,
-          min: 0
-        },
-        food: {
-          type: Number,
-          min: 0
-        },
-        activities: {
-          type: Number,
-          min: 0
-        },
-        transportation: {
-          type: Number,
-          min: 0
-        },
-        miscellaneous: {
-          type: Number,
-          min: 0
-        }
-      }
-    },
     accommodation: {
       type: {
         type: String,
@@ -198,12 +159,7 @@ const tripSchema = new mongoose.Schema({
       }],
       cuisinePreferences: [{
         type: String
-      }],
-      priceRange: {
-        type: String,
-        enum: ['budget', 'mid_range', 'fine_dining', 'mixed'],
-        default: 'mixed'
-      }
+      }]
     },
     accessibility: {
       mobilityAssistance: {
@@ -446,34 +402,6 @@ const tripSchema = new mongoose.Schema({
           },
           stack: String
         }]
-      },
-      transportation: {
-        status: {
-          type: String,
-          enum: ['pending', 'running', 'completed', 'failed', 'skipped'],
-          default: 'pending'
-        },
-        startedAt: Date,
-        completedAt: Date,
-        duration: Number,
-        confidence: {
-          type: Number,
-          min: 0,
-          max: 1
-        },
-        recommendationCount: {
-          type: Number,
-          min: 0,
-          default: 0
-        },
-        errors: [{
-          message: String,
-          timestamp: {
-            type: Date,
-            default: Date.now
-          },
-          stack: String
-        }]
       }
     },
     metadata: {
@@ -524,35 +452,6 @@ const tripSchema = new mongoose.Schema({
     isPublic: {
       type: Boolean,
       default: false
-    },
-    shareToken: {
-      type: String,
-      unique: true,
-      sparse: true
-    },
-    sharing: {
-      isEnabled: {
-        type: Boolean,
-        default: false
-      },
-      shareableLink: {
-        type: String,
-        unique: true,
-        sparse: true
-      },
-      linkExpiration: {
-        type: Date
-      },
-      createdAt: {
-        type: Date
-      },
-      accessCount: {
-        type: Number,
-        default: 0
-      },
-      lastAccessedAt: {
-        type: Date
-      }
     }
   },
   status: {
@@ -581,29 +480,19 @@ const tripSchema = new mongoose.Schema({
 });
 
 tripSchema.virtual('totalSelectedRecommendations').get(function() {
-  return Object.values(this.selectedRecommendations).reduce((total, category) => total + category.length, 0);
+  const selections = this.selectedRecommendations || {};
+  return Object.values(selections).reduce((total, category = []) => total + (category?.length || 0), 0);
 });
 
 tripSchema.virtual('totalRecommendations').get(function() {
-  return Object.values(this.recommendations).reduce((total, category) => total + category.length, 0);
+  const stored = this.recommendations || {};
+  return Object.values(stored).reduce((total, category = []) => total + (category?.length || 0), 0);
 });
 
 tripSchema.virtual('durationDays').get(function() {
   if (!this.dates.returnDate) return 1;
   const diffTime = Math.abs(this.dates.returnDate - this.dates.departureDate);
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-});
-
-tripSchema.virtual('estimatedBudget').get(function() {
-  const breakdown = this.preferences.budget?.breakdown;
-  if (!breakdown) return 0;
-  return Object.values(breakdown).reduce((sum, amount) => sum + (amount || 0), 0);
-});
-
-tripSchema.virtual('isShareLinkActive').get(function() {
-  if (!this.sharing.isEnabled || !this.sharing.shareableLink) return false;
-  if (!this.sharing.linkExpiration) return true; // No expiration set
-  return new Date() < this.sharing.linkExpiration;
 });
 
 tripSchema.pre('save', function(next) {
@@ -624,7 +513,5 @@ tripSchema.index({ 'destination.name': 1 });
 tripSchema.index({ status: 1, updatedAt: -1 });
 tripSchema.index({ 'collaboration.collaborators.userId': 1 });
 tripSchema.index({ tags: 1 });
-tripSchema.index({ 'sharing.shareableLink': 1 });
-tripSchema.index({ 'sharing.isEnabled': 1, 'sharing.linkExpiration': 1 });
 
 export default mongoose.model('Trip', tripSchema);

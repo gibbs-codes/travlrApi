@@ -1,38 +1,36 @@
-# Production Dockerfile
-FROM node:18-alpine
+# Stage 1: Build dependencies
+FROM node:18-alpine AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apk add --no-cache curl
-
-# Copy package files
 COPY package*.json ./
-
-# Install dependencies
 RUN npm ci --only=production
 
-# Copy source code
-COPY src/ ./src/
+# Stage 2: Production image
+FROM node:18-alpine
 
-# Create logs directory
-RUN mkdir -p /app/logs
+WORKDIR /app
+
+# Install runtime tools required for health checks
+RUN apk add --no-cache curl
+
+COPY package*.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY src ./src
 
 # Create non-root user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S travlr -u 1001
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
 
-# Change ownership
-RUN chown -R travlr:nodejs /app
-USER travlr
+RUN chown -R nodejs:nodejs /app
+USER nodejs
 
-# Expose port
-EXPOSE 3000
+ENV NODE_ENV=production
+ENV PORT=3006
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
+EXPOSE 3006
 
-# Start application
-CMD ["npm", "start"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+  CMD curl -sf http://localhost:3006/health || exit 1
+
+CMD ["node", "src/server.js"]

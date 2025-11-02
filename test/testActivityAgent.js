@@ -16,7 +16,6 @@ async function testActivityAgent() {
     interests: ['art', 'food', 'culture'],
     travelersCount: 2,
     durationPreferences: 'flexible',
-    budget: 100,
     travelStyle: 'leisure'
   };
 

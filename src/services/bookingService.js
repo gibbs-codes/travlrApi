@@ -1,18 +1,21 @@
 // src/services/bookingService.js (updated to use RapidAPI)
 import rapidApiService from './rapidApiService.js';
+import logger from '../utils/logger.js';
+
+const log = logger.child({ scope: 'BookingService' });
 
 class BookingService {
   constructor() {
-    console.log('BookingService initialized (using RapidAPI backend)');
+    log.info('BookingService initialized (using RapidAPI backend)');
   }
 
   async searchHotels(searchParams) {
     try {
-      console.log('BookingService delegating to RapidAPI:', searchParams);
+      log.debug('BookingService delegating to RapidAPI', searchParams);
       // Delegate to RapidAPI service
       return await rapidApiService.searchHotels(searchParams);
     } catch (error) {
-      console.error('BookingService hotel search error:', error);
+      log.error('BookingService hotel search error', { error: error.message, stack: error.stack });
       throw error;
     }
   }

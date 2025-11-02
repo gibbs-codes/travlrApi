@@ -17,8 +17,8 @@ export class AccommodationAgent extends TripPlanningAgent {
 
   async search(criteria) {
     try {
-      console.log('AccommodationAgent searching with criteria:', criteria);
-      
+      this.logInfo('AccommodationAgent searching with criteria:', criteria);
+
       // Validate required criteria
       if (!criteria.destination || !criteria.checkInDate || !criteria.checkOutDate) {
         throw new Error('Missing required accommodation criteria: destination, checkInDate, checkOutDate');
@@ -30,55 +30,93 @@ export class AccommodationAgent extends TripPlanningAgent {
         checkIn: criteria.checkInDate,
         checkOut: criteria.checkOutDate,
         guests: criteria.guests || criteria.travelers || 1,
-        maxResults: this.searchConfig.maxResults
+        maxResults: this.searchConfig.maxResults,
+        currency: criteria.currency || 'USD' // Pass currency preference
       };
 
       const accommodations = await bookingService.searchHotels(searchParams);
-      console.log(`Found ${accommodations.length} accommodations from RapidAPI`);
+      this.logInfo(`Found ${accommodations.length} accommodations from RapidAPI`);
 
       // Apply client-side filtering
       return this.applyFilters(accommodations, criteria);
-      
+
     } catch (error) {
-      console.error('AccommodationAgent search error:', error);
-      
+      this.logError('AccommodationAgent search error:', error);
+
       // Fallback to mock data if API fails (for development)
       if (process.env.NODE_ENV === 'development') {
-        console.log('Falling back to mock data for development');
+        this.logInfo('Falling back to mock data for development');
         return this.getMockAccommodations(criteria);
       }
-      
+
       throw error;
     }
   }
 
   applyFilters(accommodations, criteria) {
-    return accommodations.filter(accommodation => {
-      // Price filter
-      if (criteria.maxPrice && accommodation.price > criteria.maxPrice) {
+    this.logInfo('🔍 Applying filters with criteria:', {
+      minRating: criteria.minRating,
+      accommodationType: criteria.accommodationType,
+      requiredAmenities: criteria.requiredAmenities,
+      currency: criteria.currency || 'USD'
+    });
+
+    // Use more lenient defaults
+    const effectiveMinRating = criteria.minRating && criteria.minRating > 0 ?
+      Math.min(criteria.minRating, 3.0) : 3.0;
+
+    this.logInfo(`Using minRating: ${effectiveMinRating} (original: ${criteria.minRating})`);
+
+    const expectedCurrency = criteria.currency || 'USD';
+
+    const filtered = accommodations.filter(accommodation => {
+      // Currency validation - warn if mismatch but don't filter out
+      if (accommodation.currency && accommodation.currency !== expectedCurrency) {
+        this.logWarn(`⚠️ ${accommodation.name}: Currency mismatch (${accommodation.currency} vs expected ${expectedCurrency})`);
+      }
+
+      // Rating filter - handle rating scale conversion
+      let convertedRating = accommodation.rating;
+      const originalRating = accommodation.rating;
+
+      // Handle null/undefined ratings gracefully
+      if (convertedRating == null || convertedRating === undefined) {
+        convertedRating = 0;
+      } else if (convertedRating > 0 && convertedRating <= 1) {
+        // RapidAPI returns 0-1 scale (e.g., 0.85 = 8.5/10)
+        // Convert to 0-10 scale, then to 0-5 scale
+        convertedRating = (convertedRating * 10) / 2;
+        this.logInfo(`🔄 ${accommodation.name}: Converted rating from ${originalRating} to ${convertedRating.toFixed(2)}/5`);
+      }
+
+      if (convertedRating < effectiveMinRating) {
+        this.logInfo(`❌ ${accommodation.name}: Rating too low (original: ${originalRating}, converted: ${convertedRating.toFixed(2)}/5 < ${effectiveMinRating})`);
         return false;
       }
-      
-      // Rating filter
-      if (criteria.minRating && accommodation.rating < criteria.minRating) {
-        return false;
-      }
-      
+
       // Accommodation type filter
       if (criteria.accommodationType && accommodation.type !== criteria.accommodationType) {
+        this.logInfo(`❌ ${accommodation.name}: Type mismatch (${accommodation.type} !== ${criteria.accommodationType})`);
         return false;
       }
-      
-      // Required amenities filter
-      if (criteria.requiredAmenities && criteria.requiredAmenities.length > 0) {
+
+      // Required amenities filter - only apply if array exists AND has items
+      if (criteria.requiredAmenities && Array.isArray(criteria.requiredAmenities) && criteria.requiredAmenities.length > 0) {
+        const hotelAmenities = accommodation.amenities || [];
         const hasAllAmenities = criteria.requiredAmenities.every(
-          amenity => accommodation.amenities.includes(amenity.toLowerCase())
+          amenity => hotelAmenities.includes(amenity.toLowerCase())
         );
-        if (!hasAllAmenities) return false;
+        if (!hasAllAmenities) {
+          this.logInfo(`❌ ${accommodation.name}: Missing required amenities`);
+          return false;
+        }
       }
-      
+
       return true;
     });
+
+    this.logInfo(`✅ Filter results: ${filtered.length}/${accommodations.length} hotels passed filters`);
+    return filtered;
   }
 
   async rank(results) {
@@ -187,10 +225,16 @@ Be conversational and helpful, like a knowledgeable travel agent.
     try {
       const aiResponse = await this.generateStructuredResponse(prompt, this.resultSchema);
       
+      const topHotels = results.slice(0, 3).map((hotel, index) =>
+        this.transformAccommodationRecommendation(hotel, index)
+      );
+
       return {
-        recommendations: results.slice(0, 3), // Top 3 accommodations
-        confidence: aiResponse.content.confidence || 85,
-        reasoning: aiResponse.content.reasoning || 'Based on price, location, rating, and amenities.',
+        content: {
+          recommendations: topHotels, // Top 3 accommodations
+          confidence: aiResponse.content.confidence || 85,
+          reasoning: aiResponse.content.reasoning || 'Based on price, location, rating, and amenities.'
+        },
         metadata: {
           totalFound: results.length,
           searchCriteria: task.criteria,
@@ -198,15 +242,74 @@ Be conversational and helpful, like a knowledgeable travel agent.
         }
       };
     } catch (error) {
-      console.error('AI recommendation generation failed:', error);
+      this.logError('AI recommendation generation failed:', error);
       
       // Fallback to rule-based recommendations
+      const topHotels = results.slice(0, 3).map((hotel, index) =>
+        this.transformAccommodationRecommendation(hotel, index)
+      );
+
       return {
-        recommendations: results.slice(0, 3),
-        confidence: 70,
-        reasoning: `Found ${results.length} accommodations. Top options selected based on rating, location, and price.`,
+        content: {
+          recommendations: topHotels,
+          confidence: 70,
+          reasoning: `Found ${results.length} accommodations. Top options selected based on rating, location, and price.`
+        },
         metadata: { searchCriteria: task.criteria, aiError: error.message }
       };
     }
+  }
+
+  transformAccommodationRecommendation(hotel, position = 0) {
+    const amount = Number(
+      hotel?.price?.amount ??
+      hotel?.price ??
+      hotel?.cost ??
+      0
+    );
+    const safeAmount = Number.isFinite(amount) && amount >= 0 ? amount : 0;
+
+    const currency = (hotel?.price?.currency || hotel?.currency || 'USD').toString().toUpperCase();
+
+    const ratingScore = hotel?.rating?.score ?? hotel?.rating ?? 0;
+    const safeRating = Number.isFinite(Number(ratingScore)) ? Number(ratingScore) : 0;
+
+    const name = hotel?.name || `Hotel option ${position + 1}`;
+    const description = hotel?.description ||
+      `${name} offering comfortable stay near ${hotel?.location?.distance || 'the city center'}.`;
+
+    const amenities = Array.isArray(hotel?.amenities) ? hotel.amenities : [];
+
+    const location = hotel?.location || {};
+
+    return {
+      ...hotel,
+      name,
+      description,
+      price: {
+        amount: safeAmount,
+        currency,
+        priceType: 'per_night'
+      },
+      rating: {
+        score: Math.max(0, Math.min(5, safeRating)),
+        reviewCount: hotel?.rating?.reviewCount ?? hotel?.reviewCount ?? 0,
+        source: hotel?.rating?.source || 'accommodation_agent'
+      },
+      location: {
+        address: location?.address,
+        city: location?.city,
+        country: location?.country,
+        coordinates: location?.coordinates
+      },
+      amenities,
+      agentMetadata: {
+        hotelType: hotel?.type || 'hotel',
+        amenities,
+        roomType: hotel?.roomType || 'standard',
+        checkIn: hotel?.checkIn || hotel?.checkInDate,
+        checkOut: hotel?.checkOut || hotel?.checkOutDate
+      }
+    };
   }
 }

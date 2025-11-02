@@ -36,7 +36,8 @@ class OpenAIProvider extends BaseAIProvider {
     this.client = new OpenAI({
       apiKey: config.apiKey || process.env.OPENAI_API_KEY,
     });
-    this.model = config.model || 'gpt-3.5-turbo';
+    // **FIX: Use gpt-4 (128K context) or gpt-3.5-turbo-16k**
+    this.model = config.model || 'gpt-4-turbo-preview';  // or 'gpt-3.5-turbo-16k'
   }
 
   async generateCompletion(prompt, options = {}) {
@@ -45,10 +46,10 @@ class OpenAIProvider extends BaseAIProvider {
         model: this.model,
         messages: [{ role: 'user', content: prompt }],
         temperature: options.temperature || 0.7,
-        max_tokens: options.maxTokens || 1000,
+        max_tokens: options.maxTokens || 500,  // **FIX: Reduced from 1000**
         ...options,
       });
-      
+
       return {
         content: response.choices[0].message.content,
         usage: response.usage,
@@ -63,20 +64,29 @@ class OpenAIProvider extends BaseAIProvider {
     const structuredPrompt = `${prompt}
 
 Please respond in the following JSON format:
-${JSON.stringify(schema, null, 2)}`;
-    
-    const response = await this.generateCompletion(structuredPrompt, {
-      ...options,
-      response_format: { type: 'json_object' }
-    });
+${JSON.stringify(schema, null, 2)}
+
+Only return valid JSON, no additional text.`;
 
     try {
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        messages: [{ role: 'user', content: structuredPrompt }],
+        temperature: options.temperature || 0.7,
+        max_tokens: options.maxTokens || 1000,
+        response_format: { type: 'json_object' },
+        ...options,
+      });
+
+      const content = JSON.parse(response.choices[0].message.content);
+
       return {
-        ...response,
-        content: JSON.parse(response.content),
+        content,
+        usage: response.usage,
+        model: response.model,
       };
     } catch (error) {
-      throw new Error(`Failed to parse structured response: ${error.message}`);
+      throw new Error(`OpenAI structured completion error: ${error.message}`);
     }
   }
 }
@@ -206,7 +216,6 @@ class MockAIProvider extends BaseAIProvider {
         tripSummary: {
           destination: 'Paris, France',
           dates: { departure: '2024-03-15', return: '2024-03-20' },
-          budget: { total: 2500, breakdown: { flight: 800, accommodation: 900, activities: 400, dining: 400 } },
           confidence: 88
         },
         recommendations: {

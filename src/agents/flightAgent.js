@@ -17,8 +17,8 @@ export class FlightAgent extends TripPlanningAgent {
 
   async search(criteria) {
     try {
-      console.log('FlightAgent searching with criteria:', criteria);
-      
+      this.logInfo('FlightAgent searching with criteria:', criteria);
+
       // Validate required criteria
       if (!criteria.origin || !criteria.destination || !criteria.departureDate) {
         throw new Error('Missing required flight search criteria: origin, destination, departureDate');
@@ -31,21 +31,38 @@ export class FlightAgent extends TripPlanningAgent {
         departureDate: criteria.departureDate,
         returnDate: criteria.returnDate,
         adults: criteria.travelers || 1,
-        maxResults: this.searchConfig.maxResults
+        maxResults: this.searchConfig.maxResults,
+        currency: criteria.currency || 'USD' // Pass currency preference
       };
 
       const flights = await amadeusService.searchFlights(searchParams);
-      console.log(`Found ${flights.length} flights from Amadeus`);
+      this.logInfo(`Found ${flights.length} flights from Amadeus`);
+
+      // Handle empty results
+      if (flights.length === 0) {
+        this.logInfo('ℹ️ No flights returned from Amadeus. Possible reasons:');
+        this.logInfo('  - Dates may be too far in the future (Amadeus typically supports up to 11 months)');
+        this.logInfo('  - No availability for the specified route and dates');
+        this.logInfo('  - Route may not be served by any airlines in Amadeus database');
+
+        // Fallback to mock data in development
+        if (process.env.NODE_ENV === 'development') {
+          this.logWarn(`⚠️ No flights found from Amadeus for ${criteria.origin} to ${criteria.destination} on ${criteria.departureDate}. Using mock data.`);
+          return this.getMockFlights(criteria);
+        }
+
+        return flights; // Return empty array in production
+      }
 
       // Apply client-side filtering based on criteria
       return this.applyFilters(flights, criteria);
       
     } catch (error) {
-      console.error('FlightAgent search error:', error);
+      this.logError('FlightAgent search error:', error);
       
       // Fallback to mock data if API fails (for development)
       if (process.env.NODE_ENV === 'development') {
-        console.log('Falling back to mock data for development');
+        this.logInfo('Falling back to mock data for development');
         return this.getMockFlights(criteria);
       }
       
@@ -148,35 +165,45 @@ export class FlightAgent extends TripPlanningAgent {
       };
     }
 
+    // **FIX: Only send top 3 results to reduce token usage**
+    const topResults = results.slice(0, 3).map(flight => ({
+      airline: flight.airline,
+      price: flight.price,
+      duration: flight.duration,
+      stops: flight.stops,
+      departure: { time: flight.departure?.time, airport: flight.departure?.airport },
+      arrival: { time: flight.arrival?.time, airport: flight.arrival?.airport }
+    }));
+
     const prompt = `
-You are a travel expert analyzing flight options. Here are the search criteria and results:
+  You are a travel expert analyzing flight options. 
 
-Search Criteria:
-- Origin: ${task.criteria.origin}
-- Destination: ${task.criteria.destination} 
-- Departure: ${task.criteria.departureDate}
-- Budget: ${task.criteria.maxPrice ? `$${task.criteria.maxPrice} max` : 'No limit'}
-- Preferences: ${JSON.stringify(task.criteria)}
+  Search: ${task.criteria.origin} → ${task.criteria.destination} on ${task.criteria.departureDate}
+  Budget: ${task.criteria.maxPrice ? `$${task.criteria.maxPrice}` : 'Flexible'}
 
-Flight Options Found:
-${JSON.stringify(results.slice(0, 5), null, 2)}
+  Top 3 Flights:
+  ${JSON.stringify(topResults, null, 1)}  // **FIX: Use compact formatting**
 
-Please provide:
-1. Your top 3 flight recommendations with clear reasoning
-2. Key factors you considered (price, duration, stops, timing)
-3. Any notable trade-offs or alternatives
-4. Confidence score (0-100) based on options available
+  Provide:
+  1. Top recommendation with reasoning (50 words max)
+  2. Confidence score (0-100)
 
-Be conversational and helpful, like a knowledgeable travel agent.
-    `;
+  Be concise.
+    `.trim();  // **FIX: Remove whitespace**
 
     try {
       const aiResponse = await this.generateStructuredResponse(prompt, this.resultSchema);
       
+      const topFlights = results.slice(0, 3).map((flight, index) => 
+        this.transformFlightRecommendation(flight, index)
+      );
+
       return {
-        recommendations: results.slice(0, 3), // Top 3 flights
-        confidence: aiResponse.content.confidence || 85,
-        reasoning: aiResponse.content.reasoning || 'Based on price, convenience, and travel time.',
+        content: {
+          recommendations: topFlights,
+          confidence: aiResponse.content.confidence || 85,
+          reasoning: aiResponse.content.reasoning || 'Based on price, convenience, and travel time.'
+        },
         metadata: {
           totalFound: results.length,
           searchCriteria: task.criteria,
@@ -184,15 +211,89 @@ Be conversational and helpful, like a knowledgeable travel agent.
         }
       };
     } catch (error) {
-      console.error('AI recommendation generation failed:', error);
+      this.logError('AI recommendation generation failed:', error);
       
-      // Fallback to rule-based recommendations
+      // **IMPORTANT: Still return recommendations even if AI fails**
+      const topFlights = results.slice(0, 3).map((flight, index) => 
+        this.transformFlightRecommendation(flight, index)
+      );
+
       return {
-        recommendations: results.slice(0, 3),
-        confidence: 70,
-        reasoning: `Found ${results.length} flights. Top options selected based on price, duration, and stops.`,
-        metadata: { searchCriteria: task.criteria, aiError: error.message }
+        content: {
+          recommendations: topFlights,
+          confidence: 70,
+          reasoning: `Found ${results.length} flights. Top options selected based on price and convenience.`
+        },
+        metadata: { 
+          searchCriteria: task.criteria, 
+          aiError: error.message,
+          fallbackUsed: true  // **FIX: Mark as fallback**
+        }
       };
     }
+  }
+
+  transformFlightRecommendation(flight, position = 0) {
+    const amount = Number(
+      flight?.price?.amount ??
+      flight?.price ??
+      flight?.cost ??
+      0
+    );
+
+    const safeAmount = Number.isFinite(amount) && amount >= 0 ? amount : 0;
+    const currency = (flight?.price?.currency || flight?.currency || 'USD').toString().toUpperCase();
+
+    const ratingScore = flight?.rating?.score ?? flight?.rating ?? flight?.score ?? 0;
+    const safeRating = Number.isFinite(Number(ratingScore)) ? Number(ratingScore) : 0;
+
+    const departureAirport = flight?.departure?.airport || flight?.origin;
+    const arrivalAirport = flight?.arrival?.airport || flight?.destination;
+    const departureDate = flight?.departure?.date;
+
+    const name = flight?.name ||
+      `${flight?.airline || 'Flight'} ${flight?.flightNumber || flight?.id || position + 1}`.trim();
+
+    const description = flight?.description ||
+      `Flight from ${departureAirport || 'origin'} to ${arrivalAirport || 'destination'} on ${departureDate || 'selected date'}.`;
+
+    // Construct Google Flights deep link for booking
+    const bookingUrl = departureAirport && arrivalAirport && departureDate
+      ? `https://www.google.com/flights?q=flights+${departureAirport}+to+${arrivalAirport}+${departureDate}`
+      : null;
+
+    return {
+      ...flight,
+      name,
+      description,
+      bookingUrl, // Add booking link
+      price: {
+        amount: safeAmount,
+        currency,
+        priceType: 'total'
+      },
+      rating: {
+        score: Math.max(0, Math.min(5, safeRating)),
+        reviewCount: flight?.rating?.reviewCount ?? flight?.reviewCount ?? 0,
+        source: flight?.rating?.source || flight?.airline || 'flight_agent'
+      },
+      location: flight?.location || {
+        city: arrivalAirport,
+        country: flight?.arrival?.country
+      },
+      agentMetadata: {
+        airline: flight?.airline,
+        flightNumber: flight?.flightNumber || flight?.id,
+        departureAirport,
+        departureTime: flight?.departure?.time,
+        departureDate: flight?.departure?.date,
+        arrivalAirport,
+        arrivalTime: flight?.arrival?.time,
+        arrivalDate: flight?.arrival?.date,
+        duration: flight?.duration,
+        stops: flight?.stops ?? 0,
+        cabin: flight?.class || flight?.cabin
+      }
+    };
   }
 }

@@ -1,41 +1,74 @@
 /**
- * Simplified Trip Management API Routes
- * 
- * Minimal viable product (MVP) API for trip creation, management, and agent coordination
- * for the TravlrAPI with real-time status updates and structured validation.
- * 
- * FINAL MVP ENDPOINTS (6 total):
- * 
+ * Trip Management API Routes
+ *
+ * Trip creation, management, and agent coordination with real-time status updates.
+ *
  * === CORE TRIP MANAGEMENT ===
- * POST   /api/trip/create           - Create trip with orchestrator trigger
- * GET    /api/trip/:tripId          - Get full trip with recommendations  
- * PUT    /api/trip/:tripId/select   - Update user recommendation selections
- * GET    /api/trip/:tripId/status   - Real-time execution status
- * POST   /api/trip/:tripId/rerun    - Selective agent re-execution (optional)
- * GET    /health                    - Health check endpoint
- * 
+ * POST   /api/trip/create                    - Create trip with orchestrator trigger
+ * GET    /api/trip/:tripId                   - Get full trip with recommendations
+ * PUT    /api/trip/:tripId/select            - Update ALL recommendation selections (legacy)
+ * GET    /api/trip/:tripId/status            - Real-time execution status
+ * POST   /api/trip/:tripId/rerun             - Re-run ALL agents (legacy)
+ * POST   /api/trip/:tripId/agents/start      - Start specific agents after trip creation
+ *
+ * === MODULAR RECOMMENDATION ENDPOINTS (NEW) ===
+ * GET    /api/trip/:tripId/recommendations/flights         - Get flight recommendations
+ * PUT    /api/trip/:tripId/recommendations/flights/select  - Select flight
+ * POST   /api/trip/:tripId/recommendations/flights/rerun   - Re-run flight agent
+ *
+ * GET    /api/trip/:tripId/recommendations/hotels          - Get hotel recommendations
+ * PUT    /api/trip/:tripId/recommendations/hotels/select   - Select hotel
+ * POST   /api/trip/:tripId/recommendations/hotels/rerun    - Re-run hotel agent
+ *
+ * GET    /api/trip/:tripId/recommendations/experiences     - Get activity recommendations
+ * PUT    /api/trip/:tripId/recommendations/experiences/select - Select activity
+ * POST   /api/trip/:tripId/recommendations/experiences/rerun - Re-run activity agent
+ *
+ * GET    /api/trip/:tripId/recommendations/restaurants     - Get restaurant recommendations
+ * PUT    /api/trip/:tripId/recommendations/restaurants/select - Select restaurant
+ * POST   /api/trip/:tripId/recommendations/restaurants/rerun - Re-run restaurant agent
+ *
  * FEATURES:
- * - Structured input validation with detailed error messages
- * - Async orchestrator execution with real-time status tracking
- * - Comprehensive error handling and response formatting
- * - Selection validation and persistence
- * - Agent failure recovery and selective re-runs
- * - Database persistence with MongoDB models
- * 
- * REQUEST/RESPONSE FORMATS:
- * - All endpoints return consistent { success, data, message } format
- * - Validation errors include detailed field-level feedback
- * - Status endpoints provide real-time execution progress
+ * - Type-specific filtering and sorting
+ * - Granular agent control
+ * - Backward compatible with legacy endpoints
+ * - Consistent response formatting
  */
 
 import express from 'express';
-import { 
+import {
   createTrip,
   getTripById,
   selectRecommendations,
   getTripStatus,
-  rerunAgents
+  rerunAgents,
+  startAgents
 } from '../controllers/tripController.js';
+
+// Import modular recommendation controllers
+import {
+  getFlightRecommendations,
+  selectFlightRecommendation,
+  rerunFlightAgent
+} from '../controllers/flightRecommendationController.js';
+
+import {
+  getHotelRecommendations,
+  selectHotelRecommendation,
+  rerunHotelAgent
+} from '../controllers/hotelRecommendationController.js';
+
+import {
+  getActivityRecommendations,
+  selectActivityRecommendation,
+  rerunActivityAgent
+} from '../controllers/activityRecommendationController.js';
+
+import {
+  getRestaurantRecommendations,
+  selectRestaurantRecommendation,
+  rerunRestaurantAgent
+} from '../controllers/restaurantRecommendationController.js';
 
 import {
   validateTripCreation,
@@ -45,6 +78,7 @@ import {
   formatError,
   asyncHandler
 } from '../middleware/validation.js';
+import normalizeCreateTrip from '../middleware/normalizeCreateTrip.js';
 
 const router = express.Router();
 
@@ -52,6 +86,7 @@ const router = express.Router();
 
 // POST /api/trip/create - Create trip with orchestrator trigger
 router.post('/create', 
+  normalizeCreateTrip,
   validateTripCreation,
   asyncHandler(createTrip)
 );
@@ -80,6 +115,108 @@ router.post('/:tripId/rerun',
   validateTripId,
   validateAgentRetrigger,
   asyncHandler(rerunAgents)
+);
+
+// POST /api/trip/:tripId/agents/start - Start specific agents for existing trip
+router.post('/:tripId/agents/start',
+  validateTripId,
+  asyncHandler(startAgents)
+);
+
+// === MODULAR RECOMMENDATION ENDPOINTS ===
+
+// --- FLIGHT RECOMMENDATIONS ---
+
+// GET /api/trip/:tripId/recommendations/flights - Get flight recommendations
+router.get('/:tripId/recommendations/flights',
+  validateTripId,
+  asyncHandler(getFlightRecommendations)
+);
+
+// PUT /api/trip/:tripId/recommendations/flights/select - Select flight
+// Note: recommendationId comes from request body
+router.put('/:tripId/recommendations/flights/select',
+  validateTripId,
+  asyncHandler((req, res) => {
+    // Extract recommendationId from body and add to params
+    req.params.recommendationId = req.body.recommendationId;
+    return selectFlightRecommendation(req, res);
+  })
+);
+
+// POST /api/trip/:tripId/recommendations/flights/rerun - Re-run flight agent
+router.post('/:tripId/recommendations/flights/rerun',
+  validateTripId,
+  asyncHandler(rerunFlightAgent)
+);
+
+// --- HOTEL RECOMMENDATIONS ---
+
+// GET /api/trip/:tripId/recommendations/hotels - Get hotel recommendations
+router.get('/:tripId/recommendations/hotels',
+  validateTripId,
+  asyncHandler(getHotelRecommendations)
+);
+
+// PUT /api/trip/:tripId/recommendations/hotels/select - Select hotel
+router.put('/:tripId/recommendations/hotels/select',
+  validateTripId,
+  asyncHandler((req, res) => {
+    req.params.recommendationId = req.body.recommendationId;
+    return selectHotelRecommendation(req, res);
+  })
+);
+
+// POST /api/trip/:tripId/recommendations/hotels/rerun - Re-run hotel agent
+router.post('/:tripId/recommendations/hotels/rerun',
+  validateTripId,
+  asyncHandler(rerunHotelAgent)
+);
+
+// --- ACTIVITY/EXPERIENCE RECOMMENDATIONS ---
+
+// GET /api/trip/:tripId/recommendations/experiences - Get activity recommendations
+router.get('/:tripId/recommendations/experiences',
+  validateTripId,
+  asyncHandler(getActivityRecommendations)
+);
+
+// PUT /api/trip/:tripId/recommendations/experiences/select - Select activity
+router.put('/:tripId/recommendations/experiences/select',
+  validateTripId,
+  asyncHandler((req, res) => {
+    req.params.recommendationId = req.body.recommendationId;
+    return selectActivityRecommendation(req, res);
+  })
+);
+
+// POST /api/trip/:tripId/recommendations/experiences/rerun - Re-run activity agent
+router.post('/:tripId/recommendations/experiences/rerun',
+  validateTripId,
+  asyncHandler(rerunActivityAgent)
+);
+
+// --- RESTAURANT RECOMMENDATIONS ---
+
+// GET /api/trip/:tripId/recommendations/restaurants - Get restaurant recommendations
+router.get('/:tripId/recommendations/restaurants',
+  validateTripId,
+  asyncHandler(getRestaurantRecommendations)
+);
+
+// PUT /api/trip/:tripId/recommendations/restaurants/select - Select restaurant
+router.put('/:tripId/recommendations/restaurants/select',
+  validateTripId,
+  asyncHandler((req, res) => {
+    req.params.recommendationId = req.body.recommendationId;
+    return selectRestaurantRecommendation(req, res);
+  })
+);
+
+// POST /api/trip/:tripId/recommendations/restaurants/rerun - Re-run restaurant agent
+router.post('/:tripId/recommendations/restaurants/rerun',
+  validateTripId,
+  asyncHandler(rerunRestaurantAgent)
 );
 
 // === ERROR HANDLING ===

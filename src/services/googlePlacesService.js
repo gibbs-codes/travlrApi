@@ -26,7 +26,10 @@
 
 import axios from 'axios';
 import dotenv from 'dotenv';
+import logger from '../utils/logger.js';
 dotenv.config();
+
+const log = logger.child({ scope: 'GooglePlacesService' });
 
 class GooglePlacesService {
   constructor() {
@@ -37,7 +40,7 @@ class GooglePlacesService {
     this.directionsUrl = 'https://maps.googleapis.com/maps/api/directions/json';
     
     if (!this.apiKey) {
-      console.warn('Google Maps API key not found. Set GOOGLE_MAPS_API_KEY environment variable.');
+      log.warn('Google Maps API key not found. Set GOOGLE_MAPS_API_KEY environment variable.');
     }
   }
 
@@ -419,7 +422,6 @@ class GooglePlacesService {
     if (types.includes('cafe')) features.push('cafe');
     if (types.includes('bakery')) features.push('bakery');
     if (place.rating >= 4.5) features.push('highly_rated');
-    if (place.price_level <= 1) features.push('budget_friendly');
     if (place.price_level >= 3) features.push('upscale');
 
     return features;
@@ -588,7 +590,7 @@ class GooglePlacesService {
             routes.push(...convertedRoutes);
           }
         } catch (modeError) {
-          console.warn(`Failed to get ${mode} directions: ${modeError.message}`);
+          log.warn(`Failed to get ${mode} directions: ${modeError.message}`);
           // Continue with other modes if one fails
         }
       }

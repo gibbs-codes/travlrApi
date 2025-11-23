@@ -665,11 +665,11 @@ export const startAgents = async (req, res) => {
 
     // Check if agents are currently executing
     const executionStatus = trip.agentExecution?.status;
-    if (executionStatus === 'pending' || executionStatus === 'in_progress') {
+    if (executionStatus === 'in_progress') {
       return res.status(409).json({
         success: false,
         error: 'Conflict',
-        message: `Trip agents are already executing (status: ${executionStatus}). Please wait for current execution to complete.`
+        message: 'Trip agents are already executing. Please wait for current execution to complete.'
       });
     }
 

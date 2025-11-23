@@ -123,6 +123,48 @@ router.post('/:tripId/agents/start',
   asyncHandler(startAgents)
 );
 
+// === INDIVIDUAL AGENT ENDPOINTS (SIMPLIFIED) ===
+
+// Flight Agent
+router.post('/:tripId/agent/flight',
+  validateTripId,
+  asyncHandler(rerunFlightAgent)
+);
+router.post('/:tripId/agent/flight/rerun',
+  validateTripId,
+  asyncHandler(rerunFlightAgent)
+);
+
+// Accommodation Agent
+router.post('/:tripId/agent/accommodation',
+  validateTripId,
+  asyncHandler(rerunHotelAgent)
+);
+router.post('/:tripId/agent/accommodation/rerun',
+  validateTripId,
+  asyncHandler(rerunHotelAgent)
+);
+
+// Activity Agent
+router.post('/:tripId/agent/activity',
+  validateTripId,
+  asyncHandler(rerunActivityAgent)
+);
+router.post('/:tripId/agent/activity/rerun',
+  validateTripId,
+  asyncHandler(rerunActivityAgent)
+);
+
+// Restaurant Agent
+router.post('/:tripId/agent/restaurant',
+  validateTripId,
+  asyncHandler(rerunRestaurantAgent)
+);
+router.post('/:tripId/agent/restaurant/rerun',
+  validateTripId,
+  asyncHandler(rerunRestaurantAgent)
+);
+
 // === MODULAR RECOMMENDATION ENDPOINTS ===
 
 // --- FLIGHT RECOMMENDATIONS ---

@@ -251,7 +251,7 @@ export const createTrip = async (req, res) => {
       },
       status: triggerOrchestrator ? 'planning' : 'draft',
       agentExecution: {
-        status: triggerOrchestrator ? 'pending' : 'not_started',
+        status: 'pending',
         agents: VALID_AGENTS.reduce((acc, agent) => {
           // Initialize ALL 4 agents (flight, accommodation, activity, restaurant)
           // If triggerOrchestrator is true:

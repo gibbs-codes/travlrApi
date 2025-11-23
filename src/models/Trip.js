@@ -294,8 +294,8 @@ const tripSchema = new mongoose.Schema({
       flight: {
         status: {
           type: String,
-          enum: ['pending', 'running', 'completed', 'failed', 'skipped'],
-          default: 'pending'
+          enum: ['idle', 'pending', 'running', 'completed', 'failed', 'skipped'],
+          default: 'idle'
         },
         startedAt: Date,
         completedAt: Date,
@@ -322,8 +322,8 @@ const tripSchema = new mongoose.Schema({
       accommodation: {
         status: {
           type: String,
-          enum: ['pending', 'running', 'completed', 'failed', 'skipped'],
-          default: 'pending'
+          enum: ['idle', 'pending', 'running', 'completed', 'failed', 'skipped'],
+          default: 'idle'
         },
         startedAt: Date,
         completedAt: Date,
@@ -350,8 +350,8 @@ const tripSchema = new mongoose.Schema({
       activity: {
         status: {
           type: String,
-          enum: ['pending', 'running', 'completed', 'failed', 'skipped'],
-          default: 'pending'
+          enum: ['idle', 'pending', 'running', 'completed', 'failed', 'skipped'],
+          default: 'idle'
         },
         startedAt: Date,
         completedAt: Date,
@@ -378,8 +378,8 @@ const tripSchema = new mongoose.Schema({
       restaurant: {
         status: {
           type: String,
-          enum: ['pending', 'running', 'completed', 'failed', 'skipped'],
-          default: 'pending'
+          enum: ['idle', 'pending', 'running', 'completed', 'failed', 'skipped'],
+          default: 'idle'
         },
         startedAt: Date,
         completedAt: Date,

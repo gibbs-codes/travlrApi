@@ -1,4 +1,8 @@
 import { TripOrchestrator } from '../agents/tripOrchestrator.js';
+import { FlightAgent } from '../agents/flightAgent.js';
+import { AccommodationAgent } from '../agents/accommodationAgent.js';
+import { ActivityAgent } from '../agents/activityAgent.js';
+import { RestaurantAgent } from '../agents/restaurantAgent.js';
 import { Trip, Recommendation } from '../models/index.js';
 import databaseService from '../services/database.js';
 import { formatSuccess } from '../middleware/validation.js';
@@ -263,7 +267,7 @@ export const createTrip = async (req, res) => {
           acc[agent] = {
             status: triggerOrchestrator
               ? (isSelected ? 'pending' : 'skipped')
-              : 'pending',
+              : 'idle',
             recommendationCount: 0,
             errors: []
           };
@@ -726,22 +730,12 @@ export const startAgents = async (req, res) => {
       log.info(`   Reason: ${reason}`);
     }
 
-    // Build trip request object for orchestrator
-    const tripRequest = {
-      destination: trip.destination.name,
-      origin: trip.origin.name,
-      departureDate: trip.dates.departureDate,
-      returnDate: trip.dates.returnDate,
-      travelers: trip.travelers.count,
-      preferences: trip.preferences || {},
-      interests: trip.preferences?.interests || [],
-      agentsToRun: agents
-    };
-
-    // Execute orchestrator asynchronously (don't await)
-    executeOrchestratorAsync(trip._id, tripRequest).catch(error => {
-      log.error(`Background orchestrator execution failed for trip ${trip._id}: ${error.message}`, { stack: error.stack });
-    });
+    // Execute each agent independently in the background
+    for (const agentName of agents) {
+      executeAgentIndependently(trip._id, agentName, trip).catch(error => {
+        log.error(`Independent ${agentName} agent execution failed: ${error.message}`, { stack: error.stack });
+      });
+    }
 
     // Return success response immediately
     res.status(200).json({
@@ -763,3 +757,89 @@ export const startAgents = async (req, res) => {
     });
   }
 };
+
+// Helper function to execute individual agents independently
+async function executeAgentIndependently(tripId, agentName, trip) {
+  const agentMap = {
+    flight: FlightAgent,
+    accommodation: AccommodationAgent,
+    activity: ActivityAgent,
+    restaurant: RestaurantAgent
+  };
+
+  const AgentClass = agentMap[agentName];
+  if (!AgentClass) {
+    log.error(`No agent class found for: ${agentName}`);
+    return;
+  }
+
+  try {
+    log.info(`Starting independent execution of ${agentName} agent for trip ${tripId}`);
+
+    // Update agent status to running
+    await Trip.findByIdAndUpdate(tripId, {
+      [`agentExecution.agents.${agentName}.status`]: 'running',
+      [`agentExecution.agents.${agentName}.startedAt`]: new Date(),
+      [`agentExecution.agents.${agentName}.errors`]: []
+    });
+
+    // Build criteria from trip data
+    const criteria = {
+      destination: trip.destination.name,
+      origin: trip.origin.name,
+      departureDate: trip.dates.departureDate.toISOString().split('T')[0],
+      returnDate: trip.dates.returnDate ? trip.dates.returnDate.toISOString().split('T')[0] : null,
+      travelers: trip.travelers.count,
+      preferences: {
+        interests: trip.preferences.interests || [],
+        accommodation: trip.preferences.accommodation || {},
+        transportation: trip.preferences.transportation || {},
+        dining: trip.preferences.dining || {}
+      }
+    };
+
+    // Create and execute agent
+    const agent = new AgentClass();
+    const result = await agent.search(criteria);
+
+    log.info(`${agentName} agent completed with ${result.recommendations?.length || 0} recommendations`);
+
+    // Store recommendations in database
+    const savedRecommendations = [];
+    if (result.recommendations && Array.isArray(result.recommendations)) {
+      for (const rec of result.recommendations) {
+        const recommendation = new Recommendation({
+          tripId: tripId,
+          type: agentName,
+          ...rec
+        });
+        const saved = await recommendation.save();
+        savedRecommendations.push(saved._id);
+      }
+    }
+
+    // Update trip with recommendations
+    await Trip.findByIdAndUpdate(tripId, {
+      [`recommendations.${agentName}`]: savedRecommendations,
+      [`agentExecution.agents.${agentName}.status`]: 'completed',
+      [`agentExecution.agents.${agentName}.completedAt`]: new Date(),
+      [`agentExecution.agents.${agentName}.recommendationCount`]: savedRecommendations.length,
+      [`agentExecution.agents.${agentName}.confidence`]: result.confidence || 0
+    });
+
+    log.info(`✅ ${agentName} agent completed successfully`);
+
+  } catch (error) {
+    log.error(`${agentName} agent failed: ${error.message}`, { stack: error.stack });
+
+    // Mark agent as failed
+    await Trip.findByIdAndUpdate(tripId, {
+      [`agentExecution.agents.${agentName}.status`]: 'failed',
+      [`agentExecution.agents.${agentName}.completedAt`]: new Date(),
+      [`agentExecution.agents.${agentName}.errors`]: [{
+        message: error.message,
+        timestamp: new Date()
+      }]
+    });
+  }
+}

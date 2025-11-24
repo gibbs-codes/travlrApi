@@ -210,6 +210,22 @@ export const validatePagination = (req, res, next) => {
   next();
 };
 
+// Error response formatter
+export const formatErrorResponse = (errorType, message, details = null, statusCode = 500) => {
+  const response = {
+    success: false,
+    error: errorType,
+    message,
+    timestamp: new Date().toISOString()
+  };
+
+  if (details) {
+    response.details = details;
+  }
+
+  return { statusCode, response };
+};
+
 // Error formatting middleware
 export const formatError = (error, req, res, next) => {
   log.error(`API Error [${req.method} ${req.path}]`, { error: error.message, stack: error.stack });
@@ -221,7 +237,8 @@ export const formatError = (error, req, res, next) => {
       success: false,
       error: 'Database validation failed',
       details: validationErrors,
-      message: 'Please check your data and try again'
+      message: 'Please check your data and try again',
+      timestamp: new Date().toISOString()
     });
   }
 
@@ -229,7 +246,8 @@ export const formatError = (error, req, res, next) => {
     return res.status(400).json({
       success: false,
       error: 'Invalid ID format',
-      message: 'The provided ID is not valid'
+      message: 'The provided ID is not valid',
+      timestamp: new Date().toISOString()
     });
   }
 
@@ -237,7 +255,8 @@ export const formatError = (error, req, res, next) => {
     return res.status(409).json({
       success: false,
       error: 'Duplicate entry',
-      message: 'A record with this information already exists'
+      message: 'A record with this information already exists',
+      timestamp: new Date().toISOString()
     });
   }
 
@@ -246,7 +265,8 @@ export const formatError = (error, req, res, next) => {
     return res.status(503).json({
       success: false,
       error: 'Service unavailable',
-      message: 'Unable to connect to required services. Please try again later.'
+      message: 'Unable to connect to required services. Please try again later.',
+      timestamp: new Date().toISOString()
     });
   }
 
@@ -255,6 +275,7 @@ export const formatError = (error, req, res, next) => {
     success: false,
     error: error.message || 'Internal server error',
     message: 'An unexpected error occurred. Please try again later.',
+    timestamp: new Date().toISOString(),
     ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
   });
 };

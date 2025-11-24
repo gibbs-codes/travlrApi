@@ -9,16 +9,16 @@ class GeographicService {
   constructor() {
     // Mock city centers for development - replace with real geocoding API later
     this.cityCoordinates = {
-      'paris': { latitude: 48.8566, longitude: 2.3522 },
-      'london': { latitude: 51.5074, longitude: -0.1278 },
-      'tokyo': { latitude: 35.6762, longitude: 139.6503 },
-      'new york': { latitude: 40.7128, longitude: -74.0060 },
-      'rome': { latitude: 41.9028, longitude: 12.4964 },
-      'barcelona': { latitude: 41.3851, longitude: 2.1734 },
-      'amsterdam': { latitude: 52.3676, longitude: 4.9041 },
-      'berlin': { latitude: 52.5200, longitude: 13.4050 },
-      'madrid': { latitude: 40.4168, longitude: -3.7038 },
-      'vienna': { latitude: 48.2082, longitude: 16.3738 }
+      'paris': { lat: 48.8566, lng: 2.3522 },
+      'london': { lat: 51.5074, lng: -0.1278 },
+      'tokyo': { lat: 35.6762, lng: 139.6503 },
+      'new york': { lat: 40.7128, lng: -74.0060 },
+      'rome': { lat: 41.9028, lng: 12.4964 },
+      'barcelona': { lat: 41.3851, lng: 2.1734 },
+      'amsterdam': { lat: 52.3676, lng: 4.9041 },
+      'berlin': { lat: 52.5200, lng: 13.4050 },
+      'madrid': { lat: 40.4168, lng: -3.7038 },
+      'vienna': { lat: 48.2082, lng: 16.3738 }
     };
 
     // Travel time estimates (minutes per km) for different transport modes
@@ -445,11 +445,11 @@ class GeographicService {
   // UTILITY FUNCTIONS
 
   hasValidCoordinates(coords) {
-    return coords && 
-           typeof coords.latitude === 'number' && 
-           typeof coords.longitude === 'number' &&
-           coords.latitude >= -90 && coords.latitude <= 90 &&
-           coords.longitude >= -180 && coords.longitude <= 180;
+    return coords &&
+           typeof coords.lat === 'number' &&
+           typeof coords.lng === 'number' &&
+           coords.lat >= -90 && coords.lat <= 90 &&
+           coords.lng >= -180 && coords.lng <= 180;
   }
 
   getCoordinates(location) {
@@ -467,11 +467,11 @@ class GeographicService {
     }
 
     const R = 6371; // Earth's radius in km
-    const dLat = this.toRadians(coord2.latitude - coord1.latitude);
-    const dLon = this.toRadians(coord2.longitude - coord1.longitude);
-    
+    const dLat = this.toRadians(coord2.lat - coord1.lat);
+    const dLon = this.toRadians(coord2.lng - coord1.lng);
+
     const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(this.toRadians(coord1.latitude)) * Math.cos(this.toRadians(coord2.latitude)) *
+        Math.cos(this.toRadians(coord1.lat)) * Math.cos(this.toRadians(coord2.lat)) *
         Math.sin(dLon/2) * Math.sin(dLon/2);
     
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
@@ -489,10 +489,10 @@ class GeographicService {
 
     if (validCoords.length === 0) return null;
 
-    const avgLat = validCoords.reduce((sum, coord) => sum + coord.latitude, 0) / validCoords.length;
-    const avgLng = validCoords.reduce((sum, coord) => sum + coord.longitude, 0) / validCoords.length;
+    const avgLat = validCoords.reduce((sum, coord) => sum + coord.lat, 0) / validCoords.length;
+    const avgLng = validCoords.reduce((sum, coord) => sum + coord.lng, 0) / validCoords.length;
 
-    return { latitude: avgLat, longitude: avgLng };
+    return { lat: avgLat, lng: avgLng };
   }
 
   calculateClusterRadius(recommendations, center) {

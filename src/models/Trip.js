@@ -25,8 +25,8 @@ const tripSchema = new mongoose.Schema({
       trim: true
     },
     coordinates: {
-      latitude: Number,
-      longitude: Number
+      lat: Number,
+      lng: Number
     },
     placeId: {
       type: String,
@@ -44,8 +44,8 @@ const tripSchema = new mongoose.Schema({
       trim: true
     },
     coordinates: {
-      latitude: Number,
-      longitude: Number
+      lat: Number,
+      lng: Number
     },
     airportCode: {
       type: String,

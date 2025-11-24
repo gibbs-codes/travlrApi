@@ -610,8 +610,8 @@ export class TripOrchestrator extends BaseAgent {
     }
 
     return {
-      latitude: latNumber,
-      longitude: lonNumber
+      lat: latNumber,
+      lng: lonNumber
     };
   }
 
@@ -1295,21 +1295,21 @@ export class TripOrchestrator extends BaseAgent {
   
   calculateClusterCenter(locations) {
     if (locations.length === 0) return null;
-    
-    const avgLat = locations.reduce((sum, loc) => sum + (loc.coordinates?.latitude || 0), 0) / locations.length;
-    const avgLng = locations.reduce((sum, loc) => sum + (loc.coordinates?.longitude || 0), 0) / locations.length;
-    
-    return { latitude: avgLat, longitude: avgLng };
+
+    const avgLat = locations.reduce((sum, loc) => sum + (loc.coordinates?.lat || 0), 0) / locations.length;
+    const avgLng = locations.reduce((sum, loc) => sum + (loc.coordinates?.lng || 0), 0) / locations.length;
+
+    return { lat: avgLat, lng: avgLng };
   }
   
   calculateDistance(coord1, coord2) {
     if (!coord1 || !coord2) return Infinity;
-    
+
     const R = 6371; // Earth's radius in km
-    const dLat = this.toRadians(coord2.latitude - coord1.latitude);
-    const dLon = this.toRadians(coord2.longitude - coord1.longitude);
+    const dLat = this.toRadians(coord2.lat - coord1.lat);
+    const dLon = this.toRadians(coord2.lng - coord1.lng);
     const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(this.toRadians(coord1.latitude)) * Math.cos(this.toRadians(coord2.latitude)) *
+        Math.cos(this.toRadians(coord1.lat)) * Math.cos(this.toRadians(coord2.lat)) *
         Math.sin(dLon/2) * Math.sin(dLon/2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     return R * c;

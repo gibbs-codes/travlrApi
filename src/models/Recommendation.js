@@ -68,12 +68,12 @@ const recommendationSchema = new mongoose.Schema({
       trim: true
     },
     coordinates: {
-      latitude: {
+      lat: {
         type: Number,
         min: -90,
         max: 90
       },
-      longitude: {
+      lng: {
         type: Number,
         min: -180,
         max: 180

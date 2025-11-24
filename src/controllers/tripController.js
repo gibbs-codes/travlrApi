@@ -6,7 +6,7 @@ import { RestaurantAgent } from '../agents/restaurantAgent.js';
 import { Trip, Recommendation, Place } from '../models/index.js';
 import databaseService from '../services/database.js';
 import googlePlacesService from '../services/googlePlacesService.js';
-import { formatSuccess } from '../middleware/validation.js';
+import { formatSuccess, formatErrorResponse } from '../middleware/validation.js';
 import logger from '../utils/logger.js';
 
 const log = logger.child({ scope: 'TripController' });
@@ -157,11 +157,7 @@ export const getTripById = async (req, res) => {
     // - agentExecution with status and counts
     // - Recommendation array lengths (IDs only, not populated)
     // - Selected recommendations (IDs only, not populated)
-    res.json({
-      success: true,
-      data: trip,
-      message: 'Trip metadata retrieved successfully'
-    });
+    res.json(formatSuccess(trip, 'Trip metadata retrieved successfully'));
 
   } catch (error) {
     log.error('Get trip error', { error: error.message, stack: error.stack });
@@ -205,17 +201,16 @@ export const getTripStatus = async (req, res) => {
       transportation: trip.recommendations.transportation?.length || 0
     };
 
-    res.json({
-      success: true,
-      data: {
+    res.json(formatSuccess(
+      {
         tripId: trip.tripId,
         status: trip.status,
         execution: trip.agentExecution,
         recommendationCounts,
         lastUpdated: trip.updatedAt
       },
-      message: 'Trip status retrieved successfully'
-    });
+      'Trip status retrieved successfully'
+    ));
 
   } catch (error) {
     log.error('Get trip status error', { error: error.message, stack: error.stack });
@@ -522,14 +517,10 @@ export const createTripV2 = async (req, res) => {
       }
     });
 
-    return res.status(201).json({
-      success: true,
-      data: {
-        tripId: trip.tripId,
-        trip
-      },
-      message: 'Trip created successfully (no agents started)'
-    });
+    return res.status(201).json(formatSuccess(
+      trip,
+      'Trip created successfully (no agents started)'
+    ));
   } catch (error) {
     log.error('Trip creation v2 error', { error: error.message, stack: error.stack });
     res.status(500).json({
@@ -556,11 +547,12 @@ export const selectRecommendations = async (req, res) => {
     }
 
     // Check if trip has recommendations to select from
-    if (trip.status === 'draft' || trip.agentExecution.status === 'pending') {
+    const allowedStatuses = ['recommendations_ready', 'user_selecting', 'finalized'];
+    if (!allowedStatuses.includes(trip.status)) {
       return res.status(400).json({
         success: false,
         error: 'Trip not ready for selections',
-        message: 'Please wait for recommendations to be generated before making selections'
+        message: `Trip status is '${trip.status}'. Please wait for recommendations to be generated before making selections.`
       });
     }
 
@@ -644,151 +636,6 @@ export const selectRecommendations = async (req, res) => {
   }
 };
 
-// Enhanced agent rerun endpoint
-export const rerunAgents = async (req, res) => {
-  try {
-    return res.status(410).json({
-      success: false,
-      error: 'Deprecated',
-      message: 'Bulk agent rerun is disabled. Use per-agent /agent/{type} endpoints.'
-    });
-    const { tripId } = req.params;
-    const { agents = [], reason = 'User requested rerun', resetSelections = false } = req.body;
-
-    const trip = await Trip.findOne({ tripId });
-    if (!trip) {
-      return res.status(404).json({
-        success: false,
-        error: 'Trip not found',
-        message: `Trip with ID ${tripId} does not exist`
-      });
-    }
-
-    if (trip.agentExecution.status === 'in_progress') {
-      return res.status(409).json({
-        success: false,
-        error: 'Execution in progress',
-        message: 'Cannot rerun agents while execution is currently in progress'
-      });
-    }
-
-    // Determine agents to rerun
-    const agentsToRerun = agents.length > 0 ? agents :
-      ['flight', 'accommodation', 'activity', 'restaurant'];
-
-    const invalidAgents = agentsToRerun.filter(agent =>
-      !['flight', 'accommodation', 'activity', 'restaurant'].includes(agent)
-    );
-    
-    if (invalidAgents.length > 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid agents specified',
-        details: invalidAgents,
-        message: 'Some specified agents are not valid'
-      });
-    }
-
-    // Reset agent statuses
-    const updateData = {
-      'agentExecution.status': 'pending',
-      'agentExecution.startedAt': null,
-      'agentExecution.completedAt': null,
-      status: 'planning'
-    };
-
-    for (const agentName of agentsToRerun) {
-      updateData[`agentExecution.agents.${agentName}.status`] = 'pending';
-      updateData[`agentExecution.agents.${agentName}.startedAt`] = null;
-      updateData[`agentExecution.agents.${agentName}.completedAt`] = null;
-      updateData[`agentExecution.agents.${agentName}.errors`] = [];
-    }
-
-    await Trip.findByIdAndUpdate(trip._id, updateData);
-
-    // Remove existing recommendations for retriggered agents
-    const removedRecommendations = {};
-    for (const agentName of agentsToRerun) {
-      if (trip.recommendations[agentName]?.length > 0) {
-        await Recommendation.deleteMany({ _id: { $in: trip.recommendations[agentName] } });
-        removedRecommendations[`recommendations.${agentName}`] = [];
-        
-        if (resetSelections) {
-          removedRecommendations[`selectedRecommendations.${agentName}`] = [];
-        }
-      }
-    }
-    
-    if (Object.keys(removedRecommendations).length > 0) {
-      await Trip.findByIdAndUpdate(trip._id, removedRecommendations);
-    }
-
-    log.info(`🔄 Re-running agents: ${agentsToRerun.join(', ')}`);
-
-    res.json(formatSuccess(
-      {
-        tripId: trip.tripId,
-        retriggeredAgents: agentsToRerun,
-        status: 'planning',
-        reason,
-        resetSelections,
-        estimatedDuration: `${agentsToRerun.length * 30}-${agentsToRerun.length * 60} seconds`
-      },
-      'Agents rerun initiated successfully'
-    ));
-
-    // Execute orchestrator for retriggered agents asynchronously
-    const tripRequest = {
-      destination: trip.destination.name,
-      destinationCountry: trip.destination.country,
-      destinationPlaceId: trip.destination.placeId,
-      origin: trip.origin.name,
-      departureDate: trip.dates.departureDate.toISOString().split('T')[0],
-      returnDate: trip.dates.returnDate?.toISOString().split('T')[0],
-      travelers: trip.travelers.count,
-      preferences: {
-        accommodationType: trip.preferences.accommodation?.type,
-        minHotelRating: trip.preferences.accommodation?.minRating,
-        flightClass: trip.preferences.transportation?.flightClass,
-        nonStopFlights: trip.preferences.transportation?.preferNonStop,
-        cuisines: trip.preferences.dining?.cuisinePreferences
-      },
-      interests: trip.preferences.interests,
-      agentsToRun: agentsToRerun
-    };
-
-    if (ORCHESTRATOR_ENABLED) {
-      executeOrchestratorAsync(trip._id, tripRequest).catch(error => {
-        log.error(`Background orchestrator rerun failed for trip ${trip._id}: ${error.message}`, { stack: error.stack });
-      });
-    } else {
-      // Fallback: run each requested agent independently when orchestrator is disabled
-      await Trip.findByIdAndUpdate(trip._id, {
-        'agentExecution.status': 'in_progress',
-        'agentExecution.startedAt': new Date(),
-        'agentExecution.completedAt': null
-      });
-
-      for (const agentName of agentsToRerun) {
-        await executeAgentIndependently(trip._id, agentName, trip);
-      }
-
-      await Trip.findByIdAndUpdate(trip._id, {
-        'agentExecution.status': 'completed',
-        'agentExecution.completedAt': new Date()
-      });
-    }
-
-  } catch (error) {
-    log.error('Agent rerun error', { error: error.message, stack: error.stack });
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      message: 'Failed to rerun agents'
-    });
-  }
-};
-
 // Detailed agent execution status
 
 // Helper method to generate execution timeline
@@ -840,144 +687,6 @@ export const generateExecutionTimeline = (execution) => {
   }
   
   return timeline.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-};
-
-/**
- * Start specific agents for an existing trip
- * POST /api/trip/:tripId/agents/start
- */
-export const startAgents = async (req, res) => {
-  try {
-    return res.status(410).json({
-      success: false,
-      error: 'Deprecated',
-      message: 'Bulk agent start is disabled. Use per-agent /agent/{type} endpoints.'
-    });
-    const { tripId } = req.params;
-    const { agents, reason } = req.body;
-
-    // Validate request body
-    if (!agents || !Array.isArray(agents) || agents.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Validation error',
-        message: 'agents field is required and must be a non-empty array'
-      });
-    }
-
-    // Validate agent names
-    const VALID_AGENTS = ['flight', 'accommodation', 'activity', 'restaurant'];
-    const invalidAgents = agents.filter(agent => !VALID_AGENTS.includes(agent));
-    if (invalidAgents.length > 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Validation error',
-        message: `Invalid agent names: ${invalidAgents.join(', ')}. Valid agents are: ${VALID_AGENTS.join(', ')}`
-      });
-    }
-
-    // Ensure database connection
-    await databaseService.connect();
-
-    // Find the trip
-    const trip = await Trip.findOne({ tripId });
-    if (!trip) {
-      return res.status(404).json({
-        success: false,
-        error: 'Not found',
-        message: `Trip with ID ${tripId} does not exist`
-      });
-    }
-
-    // Check if agents are currently executing
-    const executionStatus = trip.agentExecution?.status;
-    if (executionStatus === 'in_progress') {
-      return res.status(409).json({
-        success: false,
-        error: 'Conflict',
-        message: 'Trip agents are already executing. Please wait for current execution to complete.'
-      });
-    }
-
-    // Check each requested agent's status
-    const agentStatuses = {};
-    const completedAgents = [];
-    const skippedAgents = [];
-    const pendingAgents = [];
-
-    for (const agentName of agents) {
-      const agentStatus = trip.agentExecution?.agents?.[agentName]?.status;
-      agentStatuses[agentName] = agentStatus;
-
-      if (agentStatus === 'completed') {
-        completedAgents.push(agentName);
-      } else if (agentStatus === 'skipped' || !agentStatus) {
-        skippedAgents.push(agentName);
-      } else if (agentStatus === 'pending' || agentStatus === 'running') {
-        pendingAgents.push(agentName);
-      }
-    }
-
-    // Reject if any requested agents are already completed
-    if (completedAgents.length > 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Validation error',
-        message: `The following agents have already completed: ${completedAgents.join(', ')}. Cannot restart completed agents.`
-      });
-    }
-
-    // Update agent statuses from skipped/undefined to pending
-    const updateFields = {};
-    for (const agentName of agents) {
-      updateFields[`agentExecution.agents.${agentName}.status`] = 'pending';
-      updateFields[`agentExecution.agents.${agentName}.updatedAt`] = new Date();
-      if (reason) {
-        updateFields[`agentExecution.agents.${agentName}.restartReason`] = reason;
-      }
-    }
-
-    // Update trip status and agent statuses
-    updateFields['status'] = 'planning';
-    updateFields['agentExecution.status'] = 'pending';
-
-    await Trip.findOneAndUpdate(
-      { tripId },
-      { $set: updateFields },
-      { new: true }
-    );
-
-    log.info(`🎯 Starting agents [${agents.join(', ')}] for trip ${tripId}`);
-    if (reason) {
-      log.info(`   Reason: ${reason}`);
-    }
-
-    // Execute each agent independently in the background
-    for (const agentName of agents) {
-      executeAgentIndependently(trip._id, agentName, trip).catch(error => {
-        log.error(`Independent ${agentName} agent execution failed: ${error.message}`, { stack: error.stack });
-      });
-    }
-
-    // Return success response immediately
-    res.status(200).json({
-      success: true,
-      data: {
-        tripId: trip.tripId,
-        startedAgents: agents,
-        status: 'planning',
-        message: 'Agents started successfully'
-      }
-    });
-
-  } catch (error) {
-    log.error('Start agents error', { error: error.message, stack: error.stack });
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      message: 'Error starting agents'
-    });
-  }
 };
 
 // Helper function to execute individual agents independently

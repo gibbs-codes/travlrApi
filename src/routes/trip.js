@@ -42,9 +42,7 @@ import {
   getTripById,
   selectRecommendations,
   selectSingleRecommendation,
-  getTripStatus,
-  rerunAgents,
-  startAgents
+  getTripStatus
 } from '../controllers/tripController.js';
 
 // Import modular recommendation controllers
@@ -121,19 +119,6 @@ router.post('/:tripId/select/:recommendationId',
 router.get('/:tripId/status',
   validateTripId,
   asyncHandler(getTripStatus)
-);
-
-// POST /api/trip/:tripId/rerun - Trigger selective or full agent re-runs (optional)
-router.post('/:tripId/rerun',
-  validateTripId,
-  validateAgentRetrigger,
-  asyncHandler(rerunAgents)
-);
-
-// POST /api/trip/:tripId/agents/start - Start specific agents for existing trip
-router.post('/:tripId/agents/start',
-  validateTripId,
-  asyncHandler(startAgents)
 );
 
 // === INDIVIDUAL AGENT ENDPOINTS (SIMPLIFIED) ===

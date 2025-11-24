@@ -1,4 +1,4 @@
-import env from './config/env.js';
+import env, { validateEnv } from './config/env.js';
 import app from './app.js';
 import databaseService from './services/database.js';
 import logger from './utils/logger.js';
@@ -7,6 +7,10 @@ let server;
 
 const startServer = async () => {
   try {
+    // Validate environment variables before starting
+    validateEnv();
+    logger.info('Environment variables validated');
+
     await databaseService.connect();
 
     server = app.listen(env.port, () => {

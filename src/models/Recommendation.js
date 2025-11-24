@@ -1,10 +1,11 @@
 import mongoose from 'mongoose';
+import { AGENT_TYPE_LIST } from '../constants/agentTypes.js';
 
 const recommendationSchema = new mongoose.Schema({
   agentType: {
     type: String,
     required: true,
-    enum: ['flight', 'accommodation', 'activity', 'restaurant', 'transportation'],
+    enum: [...AGENT_TYPE_LIST, 'transportation'], // transportation is future feature
     index: true
   },
   name: {

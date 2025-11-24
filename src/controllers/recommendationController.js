@@ -17,6 +17,7 @@ import { ActivityAgent } from '../agents/activityAgent.js';
 import { RestaurantAgent } from '../agents/restaurantAgent.js';
 import { formatSuccess } from '../middleware/validation.js';
 import logger from '../utils/logger.js';
+import * as recommendationService from '../services/recommendationService.js';
 
 const ORCHESTRATOR_ENABLED = process.env.ENABLE_ORCHESTRATOR === 'true';
 
@@ -317,197 +318,89 @@ export class BaseRecommendationController {
         restaurant: RestaurantAgent
       };
 
-      // Fallback path when orchestrator is disabled: run the agent directly
-      if (!ORCHESTRATOR_ENABLED) {
-        const AgentClass = agentMap[this.agentType];
-        if (!AgentClass) {
-          this.log.error(`No agent class found for ${this.agentType}`);
-          return;
-        }
+      // Path 1: Orchestrator enabled - delegate to orchestrator
+      if (ORCHESTRATOR_ENABLED) {
+        return await this.executeViaOrchestrator(tripId, trip);
+      }
 
-        this.log.info(`⏩ Running ${this.agentType} agent directly (orchestrator disabled)`);
-
-        await Trip.findByIdAndUpdate(tripId, {
-          [`agentExecution.agents.${this.agentType}.status`]: 'running',
-          [`agentExecution.agents.${this.agentType}.startedAt`]: new Date(),
-          'agentExecution.status': 'in_progress',
-          'agentExecution.startedAt': new Date()
-        });
-
-        const criteria = {
-          destination: trip.destination.name,
-          destinationCountry: trip.destination.country,
-          destinationPlaceId: trip.destination.placeId,
-          destinationCoordinates: trip.destination.coordinates,
-          origin: trip.origin.name,
-          departureDate: trip.dates.departureDate.toISOString().split('T')[0],
-          returnDate: trip.dates.returnDate?.toISOString().split('T')[0],
-          checkInDate: trip.dates.departureDate.toISOString().split('T')[0],
-          checkOutDate: trip.dates.returnDate?.toISOString().split('T')[0],
-          travelers: trip.travelers.count,
-          preferences: trip.preferences
-        };
-
-        const agent = new AgentClass();
-        const searchResult = await agent.search(criteria);
-
-        // Normalize agent output: agents may return raw arrays or { recommendations } structures
-        const extractedResults = Array.isArray(searchResult)
-          ? searchResult
-          : searchResult?.recommendations
-            || searchResult?.results
-            || searchResult?.content?.recommendations
-            || [];
-
-        // Let agents rank their own results when possible
-        const rankedResults = agent.rank ? await agent.rank(extractedResults) : extractedResults;
-
-        // Try to run agent-specific transformation if available; otherwise persist ranked results
-        let generatedRecommendations = rankedResults;
-        let generationMeta = null;
-        if (agent.generateRecommendations) {
-          try {
-            const generated = await agent.generateRecommendations(rankedResults, { criteria });
-            if (generated?.content?.recommendations && Array.isArray(generated.content.recommendations)) {
-              generatedRecommendations = generated.content.recommendations;
-              generationMeta = generated;
-            }
-          } catch (genError) {
-            this.log.warn(`⚠️ ${this.agentType} generateRecommendations failed, using raw results`, { error: genError.message });
-          }
-        }
-
-        // Fallback: if no recommendations surfaced, fall back to ranked or raw results
-        if (!Array.isArray(generatedRecommendations) || generatedRecommendations.length === 0) {
-          this.log.warn(`⚠️ ${this.agentType} agent produced no recommendations to save; falling back to ranked/raw results`);
-          if (Array.isArray(rankedResults) && rankedResults.length > 0) {
-            generatedRecommendations = rankedResults;
-          } else if (Array.isArray(extractedResults) && extractedResults.length > 0) {
-            generatedRecommendations = extractedResults;
-          } else {
-            generatedRecommendations = [];
-          }
-        }
-
-        const savedRecommendations = [];
-        if (!Array.isArray(generatedRecommendations) || generatedRecommendations.length === 0) {
-          this.log.warn(`⚠️ ${this.agentType} agent produced no recommendations to save`);
-        }
-        if (Array.isArray(generatedRecommendations)) {
-          for (const rec of generatedRecommendations) {
-            try {
-              const priceAmount = rec?.totalPrice ?? rec?.price?.amount ?? rec?.price ?? 0;
-              const priceCurrency = rec?.price?.currency || rec?.currency || 'USD';
-              const ratingScore = rec?.rating?.score ?? rec?.rating;
-              const confidenceScore =
-                typeof rec?.confidence === 'number'
-                  ? rec.confidence
-                  : typeof rec?.confidence?.score === 'number'
-                    ? rec.confidence.score
-                    : typeof generationMeta?.content?.confidence === 'number'
-                      ? generationMeta.content.confidence
-                      : 0.5;
-              const reasoning = rec?.reasoning || generationMeta?.content?.reasoning;
-
-              // Normalize confidence to 0-1 range; many agents use 0-100
-              const safeConfidence = (() => {
-                if (typeof confidenceScore !== 'number' || Number.isNaN(confidenceScore)) return 0.5;
-                if (confidenceScore > 1) return Math.min(1, confidenceScore / 100);
-                if (confidenceScore < 0) return 0;
-                return confidenceScore;
-              })();
-
-              // Normalize images to schema (array of objects)
-              const imagesNormalized = (() => {
-                if (!rec?.images) return [];
-                if (Array.isArray(rec.images)) {
-                  return rec.images
-                    .map((img, idx) => {
-                      if (!img) return null;
-                      if (typeof img === 'string') return { url: img, alt: rec.name || `image-${idx + 1}` };
-                      if (typeof img === 'object' && img.url) return { url: img.url, alt: img.alt || rec.name };
-                      return null;
-                    })
-                    .filter(Boolean);
-                }
-                if (typeof rec.images === 'string') return [{ url: rec.images, alt: rec.name }];
-                return [];
-              })();
-
-              const recommendation = new Recommendation({
-                agentType: this.agentType,
-                name: rec.title || rec.name || rec.airline || rec.hotelName || 'Unnamed Recommendation',
-                description: rec.details || rec.description || rec.summary || JSON.stringify(rec).substring(0, 500),
-                price: {
-                  amount: priceAmount,
-                  currency: priceCurrency
-                },
-                rating: ratingScore ? {
-                  score: ratingScore,
-                  reviewCount: rec.reviewCount || 0,
-                  source: rec.source || 'agent'
-                } : undefined,
-                location: rec.location,
-                availability: rec.availability,
-                images: imagesNormalized,
-                confidence: {
-                  score: safeConfidence,
-                  reasoning
-                },
-                agentMetadata: rec
-              });
-              const saved = await recommendation.save();
-              savedRecommendations.push(saved._id);
-              this.log.info(`✓ Saved recommendation: ${saved.name}`);
-            } catch (saveError) {
-              this.log.error(`Failed to save recommendation: ${saveError.message}`, { rec });
-            }
-          }
-        }
-
-        await Trip.findByIdAndUpdate(tripId, {
-          [`recommendations.${this.agentType}`]: savedRecommendations,
-          [`agentExecution.agents.${this.agentType}.status`]: 'completed',
-          [`agentExecution.agents.${this.agentType}.completedAt`]: new Date(),
-          [`agentExecution.agents.${this.agentType}.recommendationCount`]: savedRecommendations.length,
-          'agentExecution.status': 'completed',
-          'agentExecution.completedAt': new Date()
-        });
-
-        this.log.info(`✅ ${this.agentType} agent completed directly with ${savedRecommendations.length} recommendations`);
+      // Path 2: Direct agent execution (orchestrator disabled)
+      const AgentClass = agentMap[this.agentType];
+      if (!AgentClass) {
+        this.log.error(`No agent class found for ${this.agentType}`);
         return;
       }
 
-      const orchestrator = new TripOrchestrator({}, tripId);
+      this.log.info(`⏩ Running ${this.agentType} agent directly (orchestrator disabled)`);
 
-      // Build request from trip data
-      const tripRequest = {
-        destination: trip.destination.name,
-        destinationCountry: trip.destination.country,
-        destinationPlaceId: trip.destination.placeId,
-        origin: trip.origin.name,
-        departureDate: trip.dates.departureDate.toISOString().split('T')[0],
-        returnDate: trip.dates.returnDate?.toISOString().split('T')[0],
-        travelers: trip.travelers.count,
-        preferences: {
-          accommodationType: trip.preferences.accommodation?.type,
-          minHotelRating: trip.preferences.accommodation?.minRating,
-          flightClass: trip.preferences.transportation?.flightClass,
-          nonStopFlights: trip.preferences.transportation?.preferNonStop,
-          cuisines: trip.preferences.dining?.cuisinePreferences
-        },
-        interests: trip.preferences.interests
-      };
+      // Step 1: Mark agent as running
+      await Trip.findByIdAndUpdate(tripId, {
+        [`agentExecution.agents.${this.agentType}.status`]: 'running',
+        [`agentExecution.agents.${this.agentType}.startedAt`]: new Date(),
+        'agentExecution.status': 'in_progress',
+        'agentExecution.startedAt': new Date()
+      });
 
-      // Execute only this agent
-      await orchestrator.execute(tripRequest, tripId);
+      // Step 2: Build search criteria
+      const criteria = recommendationService.buildAgentCriteria(trip);
 
-      this.log.info(`✅ ${this.agentType} agent execution completed for trip ${tripId}`);
+      // Step 3: Execute agent search
+      const agent = new AgentClass();
+      const searchResult = await agent.search(criteria);
+
+      // Step 4: Extract raw results
+      const rawResults = recommendationService.extractRawResults(searchResult);
+
+      // Step 5: Rank results
+      const rankedResults = await recommendationService.rankResults(agent, rawResults);
+
+      // Step 6: Generate recommendations (optional agent transformation)
+      const { recommendations: generatedRecs, metadata } = await recommendationService.generateRecommendations(
+        agent,
+        rankedResults,
+        { criteria }
+      );
+
+      // Step 7: Select best available results
+      const finalResults = recommendationService.selectBestResults(
+        generatedRecs,
+        rankedResults,
+        rawResults
+      );
+
+      if (finalResults.length === 0) {
+        this.log.warn(`⚠️ ${this.agentType} agent produced no recommendations`);
+      }
+
+      // Step 8: Save recommendations to database
+      const savedIds = await recommendationService.saveRecommendationBatch(
+        finalResults,
+        this.agentType,
+        metadata
+      );
+
+      // Step 9: Update trip with results
+      await Trip.findByIdAndUpdate(tripId, {
+        [`recommendations.${this.agentType}`]: savedIds,
+        [`agentExecution.agents.${this.agentType}.status`]: 'completed',
+        [`agentExecution.agents.${this.agentType}.completedAt`]: new Date(),
+        [`agentExecution.agents.${this.agentType}.recommendationCount`]: savedIds.length,
+        'agentExecution.status': 'completed',
+        'agentExecution.completedAt': new Date()
+      });
+
+      this.log.info(`✅ ${this.agentType} agent completed with ${savedIds.length} recommendations`);
 
     } catch (error) {
       this.log.error(`❌ ${this.agentType} agent execution failed: ${error.message}`, { stack: error.stack });
       throw error;
     }
+  }
+
+  async executeViaOrchestrator(tripId, trip) {
+    const orchestrator = new TripOrchestrator({}, tripId);
+    const tripRequest = recommendationService.buildOrchestratorRequest(trip);
+    await orchestrator.execute(tripRequest, tripId);
+    this.log.info(`✅ ${this.agentType} agent execution completed via orchestrator`);
   }
 
   /**

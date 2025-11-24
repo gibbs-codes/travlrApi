@@ -7,6 +7,7 @@ import { Trip, Recommendation } from '../models/index.js';
 import databaseService from '../services/database.js';
 import geographicService from '../services/geographicService.js';
 import logger from '../utils/logger.js';
+import { AGENT_TYPES } from '../constants/agentTypes.js';
 
 export class TripOrchestrator extends BaseAgent {
   constructor(aiConfig = {}, tripId = null) {
@@ -31,10 +32,10 @@ export class TripOrchestrator extends BaseAgent {
 
     // Initialize specialized agents
     this.agents = {
-      flight: new FlightAgent(aiConfig),
-      accommodation: new AccommodationAgent(aiConfig),
-      activity: new ActivityAgent(aiConfig),
-      restaurant: new RestaurantAgent(aiConfig)
+      [AGENT_TYPES.FLIGHT]: new FlightAgent(aiConfig),
+      [AGENT_TYPES.ACCOMMODATION]: new AccommodationAgent(aiConfig),
+      [AGENT_TYPES.ACTIVITY]: new ActivityAgent(aiConfig),
+      [AGENT_TYPES.RESTAURANT]: new RestaurantAgent(aiConfig)
     };
 
     // Define execution phases with dependencies

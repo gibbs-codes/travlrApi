@@ -7,6 +7,7 @@ import { Trip, Recommendation, Place } from '../models/index.js';
 import databaseService from '../services/database.js';
 import googlePlacesService from '../services/googlePlacesService.js';
 import { formatSuccess, formatErrorResponse } from '../middleware/validation.js';
+import * as tripService from '../services/tripService.js';
 import logger from '../utils/logger.js';
 
 const log = logger.child({ scope: 'TripController' });
@@ -224,204 +225,112 @@ export const getTripStatus = async (req, res) => {
 
 
 
-// New enhanced trip creation endpoint
+// New enhanced trip creation endpoint - REFACTORED
 export const createTrip = async (req, res) => {
   try {
-    const {
-      title,
-      destination,
-      origin,
-      departureDate,
-      returnDate,
-      travelers = 1,
-      preferences = {},
-      interests = ['cultural', 'food'],
-      createdBy = 'anonymous',
-      collaboration,
-      triggerOrchestrator = false,
-      agentsToRun
-    } = req.body;
-    const shouldRunOrchestrator = ORCHESTRATOR_ENABLED && triggerOrchestrator === true;
+    const { triggerOrchestrator = false, agentsToRun, title } = req.body;
 
-    // Validate and set agentsToRun
-    const VALID_AGENTS = ['flight', 'accommodation', 'activity', 'restaurant'];
-    let selectedAgents = agentsToRun;
-
-    if (selectedAgents) {
-      // Validate that it's an array
-      if (!Array.isArray(selectedAgents)) {
-        return res.status(400).json({
-          success: false,
-          error: 'Validation error',
-          message: 'agentsToRun must be an array'
-        });
-      }
-
-      // Validate that all requested agents are valid
-      const invalidAgents = selectedAgents.filter(agent => !VALID_AGENTS.includes(agent));
-      if (invalidAgents.length > 0) {
-        return res.status(400).json({
-          success: false,
-          error: 'Validation error',
-          message: `Invalid agent names: ${invalidAgents.join(', ')}. Valid agents are: ${VALID_AGENTS.join(', ')}`
-        });
-      }
-
-      // Remove duplicates
-      selectedAgents = [...new Set(selectedAgents)];
-    } else {
-      // Default to all agents if not specified
-      selectedAgents = VALID_AGENTS;
+    // Step 1: Validate agents
+    const agentValidation = tripService.validateAgentList(agentsToRun);
+    if (!agentValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation error',
+        message: agentValidation.error,
+        timestamp: new Date().toISOString(),
+      });
     }
 
-    // Handle collaboration data - support both direct createdBy and collaboration object
-    const collaborationData = collaboration || {};
-    const tripCreatedBy = collaborationData.createdBy || createdBy;
+    // Step 2: Validate trip input
+    const inputValidation = tripService.validateTripInput(req.body);
+    if (!inputValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation error',
+        details: inputValidation.errors,
+        message: 'Please check your input',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    // Step 3: Determine orchestrator execution
+    const shouldRunOrchestrator = tripService.shouldTriggerOrchestrator(
+      ORCHESTRATOR_ENABLED,
+      triggerOrchestrator
+    );
+
+    // Step 4: Prepare trip data
+    const tripData = tripService.prepareTripData(req.body);
+    tripData.title = title || `Trip to ${tripData.destination.name}`;
+    tripData.agentExecution = tripService.initializeAgentExecution(agentValidation.agents);
+    tripData.status = shouldRunOrchestrator ? 'planning' : 'draft';
 
     // Ensure database connection
     await databaseService.connect();
 
-    // Parse traveler information
-    const travelerInfo = typeof travelers === 'number' 
-      ? { count: travelers, adults: travelers, children: 0, infants: 0 }
-      : travelers;
-
-    // Create Trip document
-    const tripData = {
-      title: title || `Trip to ${destination}`,
-      destination: {
-        name: destination,
-        country: preferences.destinationCountry,
-        coordinates: preferences.destinationCoordinates,
-        placeId: preferences.destinationPlaceId
-      },
-      origin: {
-        name: origin,
-        country: preferences.originCountry,
-        coordinates: preferences.originCoordinates,
-        airportCode: preferences.originAirportCode
-      },
-      dates: {
-        departureDate: new Date(departureDate),
-        returnDate: returnDate ? new Date(returnDate) : null
-      },
-      travelers: travelerInfo,
-      preferences: {
-        interests,
-        accommodation: {
-          type: preferences.accommodationType || 'any',
-          minRating: preferences.minHotelRating || 3,
-          requiredAmenities: preferences.requiredAmenities || []
-        },
-        transportation: {
-          flightClass: preferences.flightClass || 'economy',
-          preferNonStop: preferences.preferNonStop || false,
-          localTransport: preferences.localTransport || 'mixed'
-        },
-        dining: {
-          dietaryRestrictions: preferences.dietaryRestrictions || [],
-          cuisinePreferences: preferences.cuisines || []
-        },
-        accessibility: preferences.accessibility || {}
-      },
-      collaboration: {
-        createdBy: tripCreatedBy,
-        collaborators: collaborationData.collaborators || [],
-        isPublic: preferences.isPublic || false
-      },
-      status: shouldRunOrchestrator ? 'planning' : 'draft',
-      agentExecution: {
-        status: 'pending',
-        agents: VALID_AGENTS.reduce((acc, agent) => {
-          // Initialize ALL 4 agents (flight, accommodation, activity, restaurant)
-          // If triggerOrchestrator is true:
-          //   - Selected agents get 'pending' status
-          //   - Unselected agents get 'skipped' status
-          // If triggerOrchestrator is false (draft mode):
-          //   - All agents start idle; UI triggers them individually
-          const isSelected = selectedAgents.includes(agent);
-          acc[agent] = {
-            status: shouldRunOrchestrator
-              ? (isSelected ? 'pending' : 'skipped')
-              : 'idle',
-            recommendationCount: 0,
-            errors: []
-          };
-          return acc;
-        }, {})
-      }
-    };
-
-    const trip = await Trip.create(tripData);
-    log.info(`✅ Created trip ${trip.tripId} for ${destination}`);
-    log.info(`🎯 Agents to run: ${selectedAgents.join(', ')}`);
-    if (selectedAgents.length < VALID_AGENTS.length) {
-      const skippedAgents = VALID_AGENTS.filter(a => !selectedAgents.includes(a));
-      log.info(`⏭️  Skipped agents: ${skippedAgents.join(', ')}`);
-    }
-
-    // Calculate estimated completion time (assuming 30-60 seconds per agent, 5 agents)
-    const estimatedSeconds = shouldRunOrchestrator ? 180 : 0; // 3 minutes for all agents
-    const estimatedCompletion = shouldRunOrchestrator
-      ? new Date(Date.now() + estimatedSeconds * 1000).toISOString()
-      : null;
-
-    // Build simplified response - no recommendations included
-    const responseData = {
-      tripId: trip.tripId,
-      title: trip.title,
-      status: trip.status,
-      destination: {
-        name: trip.destination.name,
-        country: trip.destination.country || null
-      },
-      origin: {
-        name: trip.origin.name,
-        country: trip.origin.country || null
-      },
-      dates: {
-        departureDate: trip.dates.departureDate.toISOString().split('T')[0],
-        returnDate: trip.dates.returnDate ? trip.dates.returnDate.toISOString().split('T')[0] : null,
-        duration: trip.dates.duration || null
-      },
-      travelers: {
-        count: trip.travelers.count,
-        adults: trip.travelers.adults,
-        children: trip.travelers.children,
-        infants: trip.travelers.infants
-      },
-      agentExecution: {
-        status: trip.agentExecution.status,
-        estimatedCompletion
-      }
-    };
-
-    res.status(201).json(formatSuccess(
-      responseData,
-      shouldRunOrchestrator
-        ? 'Trip created successfully. Generating recommendations...'
-        : ORCHESTRATOR_ENABLED
-          ? 'Trip draft created successfully'
-          : 'Trip draft created successfully (orchestrator disabled)'
-    ));
-
-    // Execute orchestrator asynchronously if requested (don't await to avoid blocking response)
-    if (shouldRunOrchestrator) {
-      executeOrchestratorAsync(trip._id, {
-        destination,
-        origin,
-        departureDate,
-        returnDate,
-        destinationCountry: preferences.destinationCountry,
-        destinationPlaceId: preferences.destinationPlaceId,
-        travelers: travelerInfo.count,
-        preferences,
-        interests,
-        agentsToRun: selectedAgents
-      }).catch(error => {
-        log.error(`Background orchestrator execution failed for trip ${trip._id}: ${error.message}`, { stack: error.stack });
+    // Step 5: Save to database
+    const saveResult = await tripService.saveTripToDatabase(tripData);
+    if (!saveResult.success) {
+      return res.status(500).json({
+        success: false,
+        error: saveResult.error,
+        message: 'Failed to create trip',
+        timestamp: new Date().toISOString(),
       });
     }
+
+    const trip = saveResult.trip;
+    log.info(`✅ Created trip ${trip.tripId} for ${trip.destination.name}`);
+    log.info(`🎯 Agents configured: ${agentValidation.agents.join(', ')}`);
+
+    // Step 6: Trigger orchestrator if requested
+    if (shouldRunOrchestrator) {
+      const orchestratorRequest = tripService.buildOrchestratorRequest(
+        trip,
+        agentValidation.agents
+      );
+
+      executeOrchestratorAsync(trip._id, orchestratorRequest).catch(error => {
+        log.error(`Orchestrator failed: ${error.message}`, { stack: error.stack });
+      });
+
+      log.info(`Orchestrator triggered for trip ${trip.tripId}`);
+    }
+
+    // Step 7: Return success response
+    const estimatedCompletion = shouldRunOrchestrator
+      ? new Date(Date.now() + 180000).toISOString() // 3 minutes estimate
+      : null;
+
+    return res.status(201).json(formatSuccess(
+      {
+        tripId: trip.tripId,
+        title: trip.title,
+        status: trip.status,
+        destination: {
+          name: trip.destination.name,
+          country: trip.destination.country || null
+        },
+        origin: {
+          name: trip.origin.name,
+          country: trip.origin.country || null
+        },
+        dates: {
+          departureDate: trip.dates.departureDate.toISOString().split('T')[0],
+          returnDate: trip.dates.returnDate ? trip.dates.returnDate.toISOString().split('T')[0] : null,
+        },
+        travelers: trip.travelers,
+        agentExecution: {
+          status: trip.agentExecution.status,
+          estimatedCompletion
+        },
+        orchestratorTriggered: shouldRunOrchestrator,
+        agents: agentValidation.agents,
+      },
+      shouldRunOrchestrator
+        ? 'Trip created successfully. Generating recommendations...'
+        : 'Trip draft created successfully'
+    ));
 
   } catch (error) {
     log.error('Trip creation error', { error: error.message, stack: error.stack });

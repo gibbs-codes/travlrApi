@@ -207,11 +207,18 @@ export class ActivityAgent extends TripPlanningAgent {
 
       if (recommendations && Array.isArray(recommendations) && recommendations.length > 0) {
         this.logInfo(`✅ ActivityAgent.search: Found ${recommendations.length} recommendations`);
+        this.logDebug?.('ActivityAgent.search raw recs sample', recommendations.slice(0, 2));
 
         // Sanitize price data - convert "N/A" or invalid strings to null
         this.logInfo('🔍 ActivityAgent.search: Step 4 - Sanitizing data...');
-        const sanitized = recommendations.map(activity => {
+        const sanitized = recommendations.map((activity, idx) => {
           const sanitizedActivity = { ...activity };
+
+          // Ensure required fields exist
+          sanitizedActivity.id = sanitizedActivity.id || `ACT-${idx + 1}`;
+          sanitizedActivity.name = sanitizedActivity.name || sanitizedActivity.title || `Activity ${idx + 1}`;
+          sanitizedActivity.description = sanitizedActivity.description || sanitizedActivity.details || 'Activity';
+          sanitizedActivity.price = typeof sanitizedActivity.price === 'number' ? sanitizedActivity.price : 0;
 
           // Handle price field
           if (activity.price === 'N/A' || activity.price === 'n/a' || typeof activity.price === 'string') {

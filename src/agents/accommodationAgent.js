@@ -31,7 +31,9 @@ export class AccommodationAgent extends TripPlanningAgent {
         checkOut: criteria.checkOutDate,
         guests: criteria.guests || criteria.travelers || 1,
         maxResults: this.searchConfig.maxResults,
-        currency: criteria.currency || 'USD' // Pass currency preference
+        currency: criteria.currency || 'USD', // Pass currency preference
+        country: criteria.destinationCountry,
+        placeId: criteria.destinationPlaceId
       };
 
       const accommodations = await bookingService.searchHotels(searchParams);
@@ -68,6 +70,7 @@ export class AccommodationAgent extends TripPlanningAgent {
     this.logInfo(`Using minRating: ${effectiveMinRating} (original: ${criteria.minRating})`);
 
     const expectedCurrency = criteria.currency || 'USD';
+    const normalizedTypePreference = (criteria.accommodationType || '').toString().toLowerCase();
 
     const filtered = accommodations.filter(accommodation => {
       // Currency validation - warn if mismatch but don't filter out
@@ -94,10 +97,13 @@ export class AccommodationAgent extends TripPlanningAgent {
         return false;
       }
 
-      // Accommodation type filter
-      if (criteria.accommodationType && accommodation.type !== criteria.accommodationType) {
-        this.logInfo(`❌ ${accommodation.name}: Type mismatch (${accommodation.type} !== ${criteria.accommodationType})`);
-        return false;
+      // Accommodation type filter (skip when preference is "any" or unset)
+      if (normalizedTypePreference && normalizedTypePreference !== 'any') {
+        const normalizedAccommodationType = (accommodation.type || '').toString().toLowerCase();
+        if (normalizedAccommodationType !== normalizedTypePreference) {
+          this.logInfo(`❌ ${accommodation.name}: Type mismatch (${normalizedAccommodationType} !== ${normalizedTypePreference})`);
+          return false;
+        }
       }
 
       // Required amenities filter - only apply if array exists AND has items

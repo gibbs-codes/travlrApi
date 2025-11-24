@@ -369,6 +369,11 @@ export class TripOrchestrator extends BaseAgent {
       }
     });
 
+    if (recommendations.length > 0 && normalizedEntries.length === 0) {
+      const errorSummary = errorEntries.map((e) => e.message).join(' | ') || 'No normalization details available';
+      this.logWarn(`⚠️ ${agentName} normalization produced 0 records out of ${recommendations.length}. Reasons: ${errorSummary}`);
+    }
+
     let insertedDocs = [];
 
     if (normalizedEntries.length > 0) {
@@ -403,6 +408,7 @@ export class TripOrchestrator extends BaseAgent {
               timestamp: new Date(),
               stack: err.stack
             });
+            this.logError(`❌ Validation error for ${agentName} recommendation: ${err.message}`);
           });
         } else {
           errorEntries.push({
@@ -417,6 +423,11 @@ export class TripOrchestrator extends BaseAgent {
     const recommendationIds = insertedDocs
       .map((doc) => doc && doc._id)
       .filter(Boolean);
+
+    if (normalizedEntries.length > 0 && recommendationIds.length === 0) {
+      const errorSummary = errorEntries.map((e) => e.message).join(' | ') || 'No insertion error details captured';
+      this.logWarn(`⚠️ ${agentName} recommendations normalized (${normalizedEntries.length}) but none saved. Reasons: ${errorSummary}`);
+    }
 
     const updateOps = {
       $set: {
@@ -833,6 +844,8 @@ export class TripOrchestrator extends BaseAgent {
       tripId: this.tripId,
       origin: tripRequest.origin,
       destination: tripRequest.destination,
+      destinationCountry: tripRequest.destinationCountry || tripRequest.preferences?.destinationCountry,
+      destinationPlaceId: tripRequest.destinationPlaceId || tripRequest.preferences?.destinationPlaceId,
       departureDate: tripRequest.departureDate,
       returnDate: tripRequest.returnDate,
       travelers: tripRequest.travelers || 1,

@@ -3,15 +3,95 @@ import { FlightAgent } from '../agents/flightAgent.js';
 import { AccommodationAgent } from '../agents/accommodationAgent.js';
 import { ActivityAgent } from '../agents/activityAgent.js';
 import { RestaurantAgent } from '../agents/restaurantAgent.js';
-import { Trip, Recommendation } from '../models/index.js';
+import { Trip, Recommendation, Place } from '../models/index.js';
 import databaseService from '../services/database.js';
+import googlePlacesService from '../services/googlePlacesService.js';
 import { formatSuccess } from '../middleware/validation.js';
 import logger from '../utils/logger.js';
 
 const log = logger.child({ scope: 'TripController' });
+const ORCHESTRATOR_ENABLED = process.env.ENABLE_ORCHESTRATOR === 'true';
+
+const inferLevel = (types = []) => {
+  if (types.includes('locality')) return 'locality';
+  if (types.includes('administrative_area_level_1')) return 'admin_area';
+  if (types.includes('country')) return 'country';
+  return 'poi';
+};
+
+// Single recommendation selection alias
+export const selectSingleRecommendation = async (req, res) => {
+  const { tripId, recommendationId } = req.params;
+  const trip = await Trip.findOne({ tripId });
+  if (!trip) {
+    return res.status(404).json({
+      success: false,
+      error: 'Trip not found',
+      message: `Trip with ID ${tripId} does not exist`
+    });
+  }
+
+  const categories = Object.keys(trip.recommendations || {});
+  const matchedCategory = categories.find((cat) =>
+    (trip.recommendations[cat] || []).some((id) => id.toString() === recommendationId)
+  );
+
+  if (!matchedCategory) {
+    return res.status(404).json({
+      success: false,
+      error: 'Recommendation not found',
+      message: 'Recommendation does not belong to this trip'
+    });
+  }
+
+  req.body.selections = { [matchedCategory]: [recommendationId] };
+  return selectRecommendations(req, res);
+};
+
+async function findOrCreatePlace(googlePlaceId) {
+  if (!googlePlaceId) return null;
+  await databaseService.connect();
+  const existing = await Place.findOne({ googlePlaceId });
+  if (existing) return existing;
+
+  try {
+    const details = await googlePlacesService.getPlaceDetails(googlePlaceId);
+    const countryComponent = (details.address_components || []).find((c) => c.types?.includes('country'));
+
+    const place = await Place.create({
+      googlePlaceId,
+      displayName: details.name || details.formatted_address || googlePlaceId,
+      lat: details.geometry?.location?.lat,
+      lng: details.geometry?.location?.lng,
+      countryCode: countryComponent?.short_name,
+      level: inferLevel(details.types || []),
+      types: details.types || []
+    });
+
+    return place;
+  } catch (error) {
+    // For MVP: If Google Places API fails, create a minimal place record
+    log.warn(`Failed to fetch place details from Google, creating minimal record: ${error.message}`);
+    const place = await Place.create({
+      googlePlaceId,
+      displayName: 'Unknown Place',
+      lat: 0,
+      lng: 0,
+      countryCode: null,
+      level: 'locality',
+      types: []
+    });
+    return place;
+  }
+}
 
 // Helper function to execute orchestrator asynchronously
 async function executeOrchestratorAsync(tripId, tripRequest) {
+  if (!ORCHESTRATOR_ENABLED) {
+    log.info('⏸️ Orchestrator is disabled via ENABLE_ORCHESTRATOR. Skipping background execution.');
+    return null;
+  }
+
   try {
     log.info(`🚀 Starting orchestrator execution for trip ${tripId}`);
 
@@ -163,9 +243,10 @@ export const createTrip = async (req, res) => {
       interests = ['cultural', 'food'],
       createdBy = 'anonymous',
       collaboration,
-      triggerOrchestrator = true,
+      triggerOrchestrator = false,
       agentsToRun
     } = req.body;
+    const shouldRunOrchestrator = ORCHESTRATOR_ENABLED && triggerOrchestrator === true;
 
     // Validate and set agentsToRun
     const VALID_AGENTS = ['flight', 'accommodation', 'activity', 'restaurant'];
@@ -253,7 +334,7 @@ export const createTrip = async (req, res) => {
         collaborators: collaborationData.collaborators || [],
         isPublic: preferences.isPublic || false
       },
-      status: triggerOrchestrator ? 'planning' : 'draft',
+      status: shouldRunOrchestrator ? 'planning' : 'draft',
       agentExecution: {
         status: 'pending',
         agents: VALID_AGENTS.reduce((acc, agent) => {
@@ -262,10 +343,10 @@ export const createTrip = async (req, res) => {
           //   - Selected agents get 'pending' status
           //   - Unselected agents get 'skipped' status
           // If triggerOrchestrator is false (draft mode):
-          //   - All agents get 'pending' status for future execution
+          //   - All agents start idle; UI triggers them individually
           const isSelected = selectedAgents.includes(agent);
           acc[agent] = {
-            status: triggerOrchestrator
+            status: shouldRunOrchestrator
               ? (isSelected ? 'pending' : 'skipped')
               : 'idle',
             recommendationCount: 0,
@@ -285,8 +366,8 @@ export const createTrip = async (req, res) => {
     }
 
     // Calculate estimated completion time (assuming 30-60 seconds per agent, 5 agents)
-    const estimatedSeconds = triggerOrchestrator ? 180 : 0; // 3 minutes for all agents
-    const estimatedCompletion = triggerOrchestrator
+    const estimatedSeconds = shouldRunOrchestrator ? 180 : 0; // 3 minutes for all agents
+    const estimatedCompletion = shouldRunOrchestrator
       ? new Date(Date.now() + estimatedSeconds * 1000).toISOString()
       : null;
 
@@ -322,16 +403,25 @@ export const createTrip = async (req, res) => {
 
     res.status(201).json(formatSuccess(
       responseData,
-      triggerOrchestrator
+      shouldRunOrchestrator
         ? 'Trip created successfully. Generating recommendations...'
-        : 'Trip draft created successfully'
+        : ORCHESTRATOR_ENABLED
+          ? 'Trip draft created successfully'
+          : 'Trip draft created successfully (orchestrator disabled)'
     ));
 
     // Execute orchestrator asynchronously if requested (don't await to avoid blocking response)
-    if (triggerOrchestrator) {
+    if (shouldRunOrchestrator) {
       executeOrchestratorAsync(trip._id, {
-        destination, origin, departureDate, returnDate,
-        travelers: travelerInfo.count, preferences, interests,
+        destination,
+        origin,
+        departureDate,
+        returnDate,
+        destinationCountry: preferences.destinationCountry,
+        destinationPlaceId: preferences.destinationPlaceId,
+        travelers: travelerInfo.count,
+        preferences,
+        interests,
         agentsToRun: selectedAgents
       }).catch(error => {
         log.error(`Background orchestrator execution failed for trip ${trip._id}: ${error.message}`, { stack: error.stack });
@@ -340,6 +430,108 @@ export const createTrip = async (req, res) => {
 
   } catch (error) {
     log.error('Trip creation error', { error: error.message, stack: error.stack });
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      message: 'Failed to create trip'
+    });
+  }
+};
+
+// Spec-aligned trip creation with Google Place IDs and no auto-orchestration
+export const createTripV2 = async (req, res) => {
+  try {
+    const {
+      name,
+      origin_google_place_id,
+      origin_name,
+      origin_lat,
+      origin_lng,
+      dest_google_place_id,
+      dest_name,
+      dest_lat,
+      dest_lng,
+      start_date,
+      end_date
+    } = req.body;
+
+    if (!origin_google_place_id || !dest_google_place_id || !start_date || !end_date) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation error',
+        message: 'name, origin_google_place_id, dest_google_place_id, start_date, and end_date are required'
+      });
+    }
+
+    // If place data provided from frontend, use it directly (skip Google API call)
+    const originPlace = origin_name ? {
+      googlePlaceId: origin_google_place_id,
+      displayName: origin_name,
+      lat: origin_lat || 0,
+      lng: origin_lng || 0,
+      countryCode: null
+    } : await findOrCreatePlace(origin_google_place_id);
+
+    const destPlace = dest_name ? {
+      googlePlaceId: dest_google_place_id,
+      displayName: dest_name,
+      lat: dest_lat || 0,
+      lng: dest_lng || 0,
+      countryCode: null
+    } : await findOrCreatePlace(dest_google_place_id);
+
+    await databaseService.connect();
+
+    const trip = await Trip.create({
+      title: name || `Trip to ${dest_name || 'Unknown'}`,
+      destination: {
+        name: dest_name || destPlace?.displayName || 'Unknown Destination',
+        country: destPlace?.countryCode,
+        coordinates: { lat: dest_lat || destPlace?.lat || 0, lng: dest_lng || destPlace?.lng || 0 },
+        placeId: destPlace?.googlePlaceId || dest_google_place_id
+      },
+      origin: {
+        name: origin_name || originPlace?.displayName || 'Unknown Origin',
+        country: originPlace?.countryCode,
+        coordinates: { lat: origin_lat || originPlace?.lat || 0, lng: origin_lng || originPlace?.lng || 0 },
+        placeId: originPlace?.googlePlaceId || origin_google_place_id
+      },
+      dates: {
+        departureDate: new Date(start_date),
+        returnDate: new Date(end_date)
+      },
+      preferences: {
+        interests: ['cultural', 'food'],
+        accommodation: { type: 'any', minRating: 3, requiredAmenities: [] },
+        transportation: { flightClass: 'economy', preferNonStop: false, localTransport: 'mixed' },
+        dining: { dietaryRestrictions: [], cuisinePreferences: [] },
+        accessibility: {}
+      },
+      status: 'draft',
+      agentExecution: {
+        status: 'pending',
+        agents: {
+          flight: { status: 'idle', recommendationCount: 0, errors: [] },
+          accommodation: { status: 'idle', recommendationCount: 0, errors: [] },
+          activity: { status: 'idle', recommendationCount: 0, errors: [] },
+          restaurant: { status: 'idle', recommendationCount: 0, errors: [] }
+        }
+      },
+      collaboration: {
+        createdBy: 'anonymous'
+      }
+    });
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        tripId: trip.tripId,
+        trip
+      },
+      message: 'Trip created successfully (no agents started)'
+    });
+  } catch (error) {
+    log.error('Trip creation v2 error', { error: error.message, stack: error.stack });
     res.status(500).json({
       success: false,
       error: error.message,
@@ -455,9 +647,14 @@ export const selectRecommendations = async (req, res) => {
 // Enhanced agent rerun endpoint
 export const rerunAgents = async (req, res) => {
   try {
+    return res.status(410).json({
+      success: false,
+      error: 'Deprecated',
+      message: 'Bulk agent rerun is disabled. Use per-agent /agent/{type} endpoints.'
+    });
     const { tripId } = req.params;
     const { agents = [], reason = 'User requested rerun', resetSelections = false } = req.body;
-    
+
     const trip = await Trip.findOne({ tripId });
     if (!trip) {
       return res.status(404).json({
@@ -543,6 +740,8 @@ export const rerunAgents = async (req, res) => {
     // Execute orchestrator for retriggered agents asynchronously
     const tripRequest = {
       destination: trip.destination.name,
+      destinationCountry: trip.destination.country,
+      destinationPlaceId: trip.destination.placeId,
       origin: trip.origin.name,
       departureDate: trip.dates.departureDate.toISOString().split('T')[0],
       returnDate: trip.dates.returnDate?.toISOString().split('T')[0],
@@ -558,9 +757,27 @@ export const rerunAgents = async (req, res) => {
       agentsToRun: agentsToRerun
     };
 
-    executeOrchestratorAsync(trip._id, tripRequest).catch(error => {
-      log.error(`Background orchestrator rerun failed for trip ${trip._id}: ${error.message}`, { stack: error.stack });
-    });
+    if (ORCHESTRATOR_ENABLED) {
+      executeOrchestratorAsync(trip._id, tripRequest).catch(error => {
+        log.error(`Background orchestrator rerun failed for trip ${trip._id}: ${error.message}`, { stack: error.stack });
+      });
+    } else {
+      // Fallback: run each requested agent independently when orchestrator is disabled
+      await Trip.findByIdAndUpdate(trip._id, {
+        'agentExecution.status': 'in_progress',
+        'agentExecution.startedAt': new Date(),
+        'agentExecution.completedAt': null
+      });
+
+      for (const agentName of agentsToRerun) {
+        await executeAgentIndependently(trip._id, agentName, trip);
+      }
+
+      await Trip.findByIdAndUpdate(trip._id, {
+        'agentExecution.status': 'completed',
+        'agentExecution.completedAt': new Date()
+      });
+    }
 
   } catch (error) {
     log.error('Agent rerun error', { error: error.message, stack: error.stack });
@@ -631,6 +848,11 @@ export const generateExecutionTimeline = (execution) => {
  */
 export const startAgents = async (req, res) => {
   try {
+    return res.status(410).json({
+      success: false,
+      error: 'Deprecated',
+      message: 'Bulk agent start is disabled. Use per-agent /agent/{type} endpoints.'
+    });
     const { tripId } = req.params;
     const { agents, reason } = req.body;
 
@@ -786,6 +1008,8 @@ async function executeAgentIndependently(tripId, agentName, trip) {
     // Build criteria from trip data
     const criteria = {
       destination: trip.destination.name,
+      destinationCountry: trip.destination.country,
+      destinationPlaceId: trip.destination.placeId,
       origin: trip.origin.name,
       departureDate: trip.dates.departureDate.toISOString().split('T')[0],
       returnDate: trip.dates.returnDate ? trip.dates.returnDate.toISOString().split('T')[0] : null,

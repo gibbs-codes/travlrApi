@@ -38,8 +38,10 @@
 import express from 'express';
 import {
   createTrip,
+  createTripV2,
   getTripById,
   selectRecommendations,
+  selectSingleRecommendation,
   getTripStatus,
   rerunAgents,
   startAgents
@@ -84,6 +86,11 @@ const router = express.Router();
 
 // === CORE TRIP MANAGEMENT (MVP ENDPOINTS) ===
 
+// Spec: POST /api/trip/trips with Google place IDs, no auto orchestrator
+router.post('/trips',
+  asyncHandler(createTripV2)
+);
+
 // POST /api/trip/create - Create trip with orchestrator trigger
 router.post('/create', 
   normalizeCreateTrip,
@@ -102,6 +109,12 @@ router.put('/:tripId/select',
   validateTripId,
   validateSelections,
   asyncHandler(selectRecommendations)
+);
+
+// Alias selection endpoint per spec
+router.post('/:tripId/select/:recommendationId',
+  validateTripId,
+  asyncHandler(selectSingleRecommendation)
 );
 
 // GET /api/trip/:tripId/status - Real-time orchestrator execution status

@@ -7,6 +7,26 @@ class RapidApiHotelService {
     this.baseUrl = 'https://booking-com.p.rapidapi.com/v1';
     this.apiKey = null;
     this.isEnabled = false;
+    this.destinationCache = new Map();
+    this.destinationMap = {
+      'paris': '-1456928',
+      'london': '-2601889',
+      'new york': '20088325',
+      'tokyo': '-246227',
+      'rome': '-126693',
+      'barcelona': '-372490',
+      'amsterdam': '-2140479',
+      'berlin': '-1746443',
+      'madrid': '-390625',
+      'lisbon': '-2167973',
+      'prague': '-553173',
+      'vienna': '-1995499',
+      'florence': '-117543',
+      'venice': '-118114',
+      'milan': '-127310',
+      'munich': '-1829149',
+      'zurich': '-2657896'
+    };
   }
 
   getApiKey() {
@@ -40,12 +60,21 @@ class RapidApiHotelService {
         checkOut,
         guests = 1,
         maxResults = 10,
-        currency = 'USD' // Allow currency to be specified in search params
+        currency = 'USD', // Allow currency to be specified in search params
+        country,
+        placeId
       } = searchParams;
 
-      log.debug('Searching hotels via RapidAPI', { destination, checkIn, checkOut, currency });
+      log.debug('Searching hotels via RapidAPI', {
+        destination,
+        checkIn,
+        checkOut,
+        currency,
+        country,
+        placeId
+      });
 
-      const destId = this.getDestinationId(destination);
+      const destId = await this.resolveDestinationId(destination, { country, placeId });
       log.debug(`Using destination ID: ${destId} for ${destination}`);
 
       // Build query parameters with the EXACT field names the API expects
@@ -105,7 +134,7 @@ class RapidApiHotelService {
 
       log.debug(`Found ${data.result.length} raw hotels from RapidAPI`);
 
-      const hotels = this.transformHotelData(data.result, currency);
+      const hotels = this.transformHotelData(data.result, currency, destination);
       log.debug(`Successfully transformed ${hotels.length} hotels`);
 
       // Log currency summary
@@ -134,42 +163,151 @@ class RapidApiHotelService {
     }
   }
 
-  getDestinationId(destination) {
-    // Booking.com destination IDs for major cities
-    const destinationMap = {
-      'paris': '-1456928',
-      'london': '-2601889',
-      'new york': '20088325',
-      'tokyo': '-246227',
-      'rome': '-126693',
-      'barcelona': '-372490',
-      'amsterdam': '-2140479',
-      'berlin': '-1746443',
-      'madrid': '-390625',
-      'lisbon': '-2167973',
-      'prague': '-553173',
-      'vienna': '-1995499',
-      'florence': '-117543',
-      'venice': '-118114',
-      'milan': '-127310',
-      'munich': '-1829149',
-      'zurich': '-2657896'
-    };
-
-    const key = destination.toLowerCase().trim();
-    log.debug(`Looking up destination ID for: "${key}"`);
-    
-    if (destinationMap[key]) {
-      log.debug(`Found destination ID: ${destinationMap[key]}`);
-      return destinationMap[key];
+  async resolveDestinationId(destination, { country, placeId, coordinates } = {}) {
+    const key = (destination || '').toLowerCase().trim();
+    if (!key) {
+      throw new Error('Destination is required to resolve destination ID');
     }
 
-    // Fallback to Paris if destination not found
-    log.warn(`Destination "${destination}" not found in mapping. Using Paris as fallback.`);
-    return '-1456928'; // Paris
+    // 1) Cache hit
+    if (this.destinationCache.has(key)) {
+      return this.destinationCache.get(key);
+    }
+
+    // 2) Live lookup via RapidAPI locations endpoint (preferred)
+    const apiKey = this.getApiKey();
+    if (!apiKey) {
+      throw new Error('RapidAPI service not configured - missing RAPIDAPI_KEY in .env file');
+    }
+
+    const queryParams = new URLSearchParams({
+      text: destination,
+      locale: 'en-gb'
+    });
+
+    if (country) queryParams.set('country', country);
+    if (placeId) queryParams.set('place_id', placeId);
+
+    const url = `${this.baseUrl}/locations/auto-complete?${queryParams}`;
+    log.debug('Looking up destination via RapidAPI auto-complete', { url });
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'X-RapidAPI-Key': apiKey,
+          'X-RapidAPI-Host': 'booking-com.p.rapidapi.com'
+        }
+      });
+
+      log.debug('RapidAPI destination lookup status', { status: response.status });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        log.warn(`Destination lookup failed (${response.status}): ${errorText}`);
+      } else {
+        const data = await response.json();
+        const candidates = Array.isArray(data?.results)
+          ? data.results
+          : Array.isArray(data)
+            ? data
+            : data?.data || [];
+
+        const cityCandidate = candidates.find(c =>
+          (c.dest_type || c.type) === 'city' ||
+          (c.label && c.label.toLowerCase().includes(destination.toLowerCase()))
+        ) || candidates[0];
+
+        const destId = cityCandidate?.dest_id || cityCandidate?.id;
+
+        if (destId) {
+          this.destinationCache.set(key, destId);
+          log.info(`✅ Resolved destination "${destination}" to dest_id ${destId} via auto-complete`);
+          return destId;
+        }
+
+        log.warn(`Destination lookup returned no dest_id for "${destination}"`, { candidates: candidates.length });
+      }
+    } catch (error) {
+      log.warn(`Destination lookup error for "${destination}": ${error.message}`);
+    }
+
+    // 3) Retry with alternate endpoint when auto-complete fails (common 404)
+    try {
+      const altUrl = `${this.baseUrl}/hotels/locations?name=${encodeURIComponent(destination)}&locale=en-us`;
+      log.debug('Retrying destination lookup via /hotels/locations', { url: altUrl });
+      const altResp = await fetch(altUrl, {
+        method: 'GET',
+        headers: {
+          'X-RapidAPI-Key': apiKey,
+          'X-RapidAPI-Host': 'booking-com.p.rapidapi.com'
+        }
+      });
+      log.debug('RapidAPI alt destination lookup status', { status: altResp.status });
+
+      if (altResp.ok) {
+        const altData = await altResp.json();
+        const candidates = Array.isArray(altData) ? altData : altData?.data || [];
+
+        // Pick the closest city candidate when coordinates are available
+        let cityCandidate = candidates.find(c =>
+          (c.dest_type || c.type) === 'city' ||
+          (c.city_name && c.city_name.toLowerCase().includes(destination.toLowerCase())) ||
+          (c.search_type === 'CITY')
+        );
+
+        if (!cityCandidate && candidates.length > 0) {
+          cityCandidate = candidates[0];
+        }
+
+        if (coordinates && candidates.length > 0) {
+          const { lat, lng } = coordinates;
+          const withDistance = candidates
+            .map(c => {
+              const clat = c.latitude || c.lat;
+              const clng = c.longitude || c.lng;
+              if (typeof clat !== 'number' || typeof clng !== 'number') return null;
+              const dLat = clat - lat;
+              const dLng = clng - lng;
+              const dist2 = dLat * dLat + dLng * dLng;
+              return { candidate: c, dist2 };
+            })
+            .filter(Boolean)
+            .sort((a, b) => a.dist2 - b.dist2);
+          if (withDistance.length > 0) {
+            cityCandidate = withDistance[0].candidate;
+          }
+        }
+
+        const destId = cityCandidate?.dest_id || cityCandidate?.destId || cityCandidate?.id;
+        if (destId) {
+          this.destinationCache.set(key, destId);
+          log.info(`✅ Resolved destination "${destination}" to dest_id ${destId} via /hotels/locations`);
+          return destId;
+        }
+        log.warn('Alternate destination lookup returned no usable city candidate', { sample: candidates[0] });
+      } else {
+        const altText = await altResp.text();
+        log.warn(`Alternate destination lookup failed (${altResp.status}): ${altText}`);
+      }
+    } catch (error) {
+      log.warn(`Alternate destination lookup error for "${destination}": ${error.message}`);
+    }
+
+    // 4) Known map hit as fallback
+    if (this.destinationMap[key]) {
+      const mappedId = this.destinationMap[key];
+      this.destinationCache.set(key, mappedId);
+      log.info(`ℹ️ Falling back to static map for "${destination}" -> ${mappedId}`);
+      return mappedId;
+    }
+
+    // 4) Last resort fallback to Paris to avoid hard failure
+    log.warn(`Destination "${destination}" not found via lookup. Using Paris as fallback.`);
+    return this.destinationMap['paris'];
   }
 
-  transformHotelData(hotelData, requestedCurrency = 'USD') {
+  transformHotelData(hotelData, requestedCurrency = 'USD', destinationName = '') {
     return hotelData.map(hotel => {
       // Handle different price formats from the API
       let price = 0;
@@ -231,7 +369,7 @@ class RapidApiHotelService {
         bookingUrl, // Add booking link
         location: {
           address: hotel.address || hotel.hotel_name || 'Address not available',
-          city: hotel.city || destination,
+          city: hotel.city || destinationName,
           country: hotel.country_code || '',
           distance: hotel.distance_to_cc ?
             `${hotel.distance_to_cc} km from center` :

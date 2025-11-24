@@ -5,6 +5,7 @@ import env from './config/env.js';
 import travelRoutes from './routes/travel.js';
 import tripRoutes from './routes/trip.js';
 import recommendationRoutes from './routes/recommendations.js';
+import placeRoutes from './routes/place.js';
 import databaseService from './services/database.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import logger from './utils/logger.js';
@@ -34,6 +35,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use('/api/travel', travelRoutes);
 app.use('/api/trip', tripRoutes);
+app.use('/api/places', placeRoutes);
 app.use('/api/recommendations', recommendationRoutes);
 
 app.get('/health', (_req, res) => {

@@ -1,13 +1,17 @@
 /**
  * TransportationAgent Test Suite
- * 
+ *
+ * ⚠️ NOTE: TransportationAgent is NOT yet integrated into the application.
+ * This test file is maintained for future feature development.
+ * See src/agents/transportationAgent.js for integration status and TODO items.
+ *
  * This test validates the Google Directions API integration with the TransportationAgent.
  * It tests both successful API calls and fallback behavior when the API is unavailable.
- * 
+ *
  * Prerequisites:
  * - Set GOOGLE_MAPS_API_KEY environment variable for full testing
  * - Without API key, tests will demonstrate fallback behavior
- * 
+ *
  * Usage:
  *   node test/testTransportationAgent.js
  * 

@@ -1,38 +1,38 @@
 /**
- * Trip Management API Routes
+ * Trip Management API Routes (CANONICAL)
  *
- * Trip creation, management, and agent coordination with real-time status updates.
+ * These are the primary, canonical routes for trip management.
+ * All UI code should use these routes.
+ *
+ * ⚠️  NOTE: /api/recommendations/* routes are deprecated (see recommendations.js)
  *
  * === CORE TRIP MANAGEMENT ===
  * POST   /api/trip/create                    - Create trip with orchestrator trigger
  * GET    /api/trip/:tripId                   - Get full trip with recommendations
- * PUT    /api/trip/:tripId/select            - Update ALL recommendation selections (legacy)
+ * POST   /api/trip/:tripId/select/:recId     - Select a single recommendation
  * GET    /api/trip/:tripId/status            - Real-time execution status
- * POST   /api/trip/:tripId/rerun             - Re-run ALL agents (legacy)
- * POST   /api/trip/:tripId/agents/start      - Start specific agents after trip creation
  *
- * === MODULAR RECOMMENDATION ENDPOINTS (NEW) ===
- * GET    /api/trip/:tripId/recommendations/flights         - Get flight recommendations
- * PUT    /api/trip/:tripId/recommendations/flights/select  - Select flight
- * POST   /api/trip/:tripId/recommendations/flights/rerun   - Re-run flight agent
+ * === PER-AGENT CONTROL ===
+ * POST   /api/trip/:tripId/agent/flight              - Start/run flight agent
+ * POST   /api/trip/:tripId/agent/flight/rerun        - Re-run flight agent
+ * POST   /api/trip/:tripId/agent/accommodation       - Start/run accommodation agent
+ * POST   /api/trip/:tripId/agent/accommodation/rerun - Re-run accommodation agent
+ * POST   /api/trip/:tripId/agent/activity            - Start/run activity agent
+ * POST   /api/trip/:tripId/agent/activity/rerun      - Re-run activity agent
+ * POST   /api/trip/:tripId/agent/restaurant          - Start/run restaurant agent
+ * POST   /api/trip/:tripId/agent/restaurant/rerun    - Re-run restaurant agent
  *
- * GET    /api/trip/:tripId/recommendations/hotels          - Get hotel recommendations
- * PUT    /api/trip/:tripId/recommendations/hotels/select   - Select hotel
- * POST   /api/trip/:tripId/recommendations/hotels/rerun    - Re-run hotel agent
- *
- * GET    /api/trip/:tripId/recommendations/experiences     - Get activity recommendations
- * PUT    /api/trip/:tripId/recommendations/experiences/select - Select activity
- * POST   /api/trip/:tripId/recommendations/experiences/rerun - Re-run activity agent
- *
- * GET    /api/trip/:tripId/recommendations/restaurants     - Get restaurant recommendations
- * PUT    /api/trip/:tripId/recommendations/restaurants/select - Select restaurant
- * POST   /api/trip/:tripId/recommendations/restaurants/rerun - Re-run restaurant agent
+ * === RECOMMENDATION RETRIEVAL ===
+ * GET    /api/trip/:tripId/recommendations/flights      - Get flight recommendations
+ * GET    /api/trip/:tripId/recommendations/hotels       - Get hotel recommendations
+ * GET    /api/trip/:tripId/recommendations/experiences  - Get activity recommendations
+ * GET    /api/trip/:tripId/recommendations/restaurants  - Get restaurant recommendations
  *
  * FEATURES:
  * - Type-specific filtering and sorting
  * - Granular agent control
- * - Backward compatible with legacy endpoints
- * - Consistent response formatting
+ * - Consistent response formatting with timestamps
+ * - All responses use standardized format: { success, data, message, timestamp }
  */
 
 import express from 'express';

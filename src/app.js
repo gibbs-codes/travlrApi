@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import env from './config/env.js';
-import travelRoutes from './routes/travel.js';
 import tripRoutes from './routes/trip.js';
 import recommendationRoutes from './routes/recommendations.js';
 import placeRoutes from './routes/place.js';
@@ -33,7 +32,6 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-app.use('/api/travel', travelRoutes);
 app.use('/api/trip', tripRoutes);
 app.use('/api/places', placeRoutes);
 app.use('/api/recommendations', recommendationRoutes);

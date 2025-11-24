@@ -28,7 +28,6 @@ travlrApi/
 │   │
 │   ├── controllers/      # Request handlers
 │   │   ├── tripController.js                      # Trip CRUD & agent execution
-│   │   ├── travelController.js                    # Legacy travel endpoints
 │   │   └── restaurantRecommendationController.js  # Restaurant-specific logic
 │   │
 │   ├── models/           # MongoDB schemas
@@ -38,7 +37,6 @@ travlrApi/
 │   │
 │   ├── routes/           # API route definitions
 │   │   ├── trip.js              # /api/trip/* endpoints
-│   │   ├── travel.js            # /api/travel/* endpoints
 │   │   └── recommendations.js   # /api/recommendations/* endpoints
 │   │
 │   ├── services/         # External service integrations

@@ -1,15 +1,23 @@
 /**
  * Recommendation Routes
  *
- * Unified routes for all recommendation types with type-specific controllers.
+ * ⚠️ DEPRECATED: These routes are deprecated as of 2025-01-24
+ * Use /api/trip/:tripId/recommendations/:type endpoints instead
  *
- * Routes:
- * GET    /api/recommendations/:tripId/flights           - Get flight recommendations
- * GET    /api/recommendations/:tripId/flights/:id       - Get single flight
- * PUT    /api/recommendations/:tripId/flights/:id/select - Select flight
- * POST   /api/recommendations/:tripId/flights/rerun     - Rerun flight agent
+ * This file will be removed in a future release (target: 2025-03-01)
  *
- * Same pattern for: /hotels, /activities, /restaurants
+ * DEPRECATED Routes:
+ * GET    /api/recommendations/:tripId/flights           - Use /api/trip/:tripId/recommendations/flights
+ * GET    /api/recommendations/:tripId/flights/:id       - Not recommended, fetch full list instead
+ * PUT    /api/recommendations/:tripId/flights/:id/select - Use /api/trip/:tripId/select/:id
+ * POST   /api/recommendations/:tripId/flights/rerun     - Use /api/trip/:tripId/agent/flight/rerun
+ *
+ * CANONICAL ENDPOINTS (use these):
+ * - GET    /api/trip/:tripId/recommendations/:type
+ * - POST   /api/trip/:tripId/select/:recommendationId
+ * - POST   /api/trip/:tripId/agent/:type/rerun
+ *
+ * @deprecated Use /api/trip/:tripId/recommendations routes instead
  */
 
 import express from 'express';
@@ -45,6 +53,18 @@ import {
 } from '../controllers/restaurantRecommendationController.js';
 
 const router = express.Router();
+
+// Deprecation warning middleware
+const deprecationWarning = (req, res, next) => {
+  res.setHeader('Deprecation', 'true');
+  res.setHeader('Sunset', '2025-03-01');
+  res.setHeader('Link', '</api/trip>; rel="alternate"');
+  console.warn(`⚠️  DEPRECATED ENDPOINT: ${req.method} ${req.originalUrl} - Use /api/trip/:tripId/recommendations instead`);
+  next();
+};
+
+// Apply deprecation warning to all routes
+router.use(deprecationWarning);
 
 // === FLIGHT RECOMMENDATIONS ===
 

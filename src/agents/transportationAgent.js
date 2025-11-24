@@ -1,3 +1,30 @@
+/**
+ * TransportationAgent - LOCAL TRANSPORTATION RECOMMENDATIONS
+ *
+ * ⚠️ TODO: FUTURE FEATURE - NOT YET INTEGRATED
+ *
+ * This agent is designed to provide local transportation recommendations
+ * (Uber, Lyft, public transit, rental cars, etc.) but is not currently
+ * integrated into the trip planning flow.
+ *
+ * STATUS:
+ * - ✅ Agent implementation complete
+ * - ✅ Model fields present (Trip.transportation, preferences.transportation)
+ * - ✅ Recommendation enum includes 'transportation'
+ * - ❌ NOT included in UI agent types (only flight, accommodation, restaurant, activity)
+ * - ❌ NOT registered in trip orchestrator
+ * - ❌ NOT accessible via API routes
+ *
+ * TO ENABLE:
+ * 1. Add 'transportation' to travlrUI/lib/api/schemas.ts agentTypeSchema
+ * 2. Register TransportationAgent in tripOrchestrator.js
+ * 3. Add route handler in trip.js (POST /trip/:id/agent/transportation)
+ * 4. Add UI components for transportation recommendations
+ *
+ * @see models/Trip.js - transportation preferences and recommendation arrays
+ * @see models/Recommendation.js - 'transportation' is valid agentType
+ */
+
 import { TripPlanningAgent } from './baseAgent.js';
 import googlePlacesService from '../services/googlePlacesService.js';
 

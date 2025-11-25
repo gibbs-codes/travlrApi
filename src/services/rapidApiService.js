@@ -385,7 +385,7 @@ class RapidApiHotelService {
         rating: parseFloat(rating) || 0,
         amenities: this.extractAmenities(hotel),
         description: hotel.hotel_name_trans || hotel.hotel_name || 'No description available',
-        images: hotel.main_photo_url ? [hotel.main_photo_url] : [],
+        images: hotel.max_photo_url || hotel.max_1440_photo_url || hotel.main_photo_url ? [hotel.max_photo_url || hotel.max_1440_photo_url || hotel.main_photo_url] : [],
         availability: hotel.is_free_cancellable ? 'Free cancellation available' : 'Standard booking terms',
         rawData: hotel // Keep original data for debugging
       };

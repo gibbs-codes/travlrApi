@@ -431,8 +431,13 @@ class GooglePlacesService {
    * Extract photo references for later use
    */
   extractPhotoReferences(photos) {
-    if (!photos || !Array.isArray(photos)) return [];
-    
+    if (!photos || !Array.isArray(photos)) {
+      console.log('[GooglePlacesService] No photos array provided');
+      return [];
+    }
+
+    console.log(`[GooglePlacesService] Extracting ${photos.length} photo references`);
+
     return photos.slice(0, 5).map(photo => ({
       reference: photo.photo_reference,
       width: photo.width,

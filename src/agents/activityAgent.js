@@ -24,7 +24,8 @@ export class ActivityAgent extends TripPlanningAgent {
           price: 'number', // Changed from estimatedPrice to match TripOrchestrator expectations
           rating: 'number',
           location: 'string',
-          bookingRequired: 'boolean'
+          bookingRequired: 'boolean',
+          imageUrl: 'string' // Optional image URL for the activity
         }
       ],
       confidence: 'number', // 0-100 confidence score
@@ -158,7 +159,8 @@ export class ActivityAgent extends TripPlanningAgent {
             price: 'number',
             rating: 'number',
             location: 'string',
-            bookingRequired: 'boolean'
+            bookingRequired: 'boolean',
+            imageUrl: 'string'
           }
         ]
       };
@@ -293,6 +295,7 @@ For each activity, provide:
 - rating: realistic rating out of 5 (decimal allowed, e.g., 4.3)
 - location: specific area/neighborhood within the destination
 - bookingRequired: true if advance booking typically needed, false if walk-in friendly
+- imageUrl: a representative Unsplash image URL related to the activity type (optional but recommended)
 
 Also provide:
 - confidence: your confidence level in these recommendations (0-100)

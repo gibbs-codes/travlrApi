@@ -697,6 +697,16 @@ export class TripOrchestrator extends BaseAgent {
   }
 
   normalizeImages(rawRecommendation = {}) {
+    // Handle imageUrl string field (for activities)
+    if (rawRecommendation.imageUrl && typeof rawRecommendation.imageUrl === 'string') {
+      return [{
+        url: rawRecommendation.imageUrl,
+        alt: rawRecommendation.name || 'Activity image',
+        isPrimary: true
+      }];
+    }
+
+    // Handle images array
     if (!Array.isArray(rawRecommendation.images)) {
       return [];
     }

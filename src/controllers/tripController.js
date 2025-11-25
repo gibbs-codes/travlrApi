@@ -23,8 +23,16 @@ const inferLevel = (types = []) => {
 // Single recommendation selection alias
 export const selectSingleRecommendation = async (req, res) => {
   const { tripId, recommendationId } = req.params;
+
+  log.info(`🔍 Attempting to select recommendation`, {
+    tripId,
+    recommendationId,
+    endpoint: 'selectSingleRecommendation'
+  });
+
   const trip = await Trip.findOne({ tripId });
   if (!trip) {
+    log.warn(`❌ Trip not found for selection`, { tripId, recommendationId });
     return res.status(404).json({
       success: false,
       error: 'Trip not found',
@@ -32,18 +40,51 @@ export const selectSingleRecommendation = async (req, res) => {
     });
   }
 
+  log.info(`✅ Found trip`, {
+    tripId: trip.tripId,
+    status: trip.status,
+    recommendationCategories: Object.keys(trip.recommendations || {}),
+    recommendationCounts: Object.fromEntries(
+      Object.entries(trip.recommendations || {}).map(([cat, ids]) => [cat, ids.length])
+    )
+  });
+
   const categories = Object.keys(trip.recommendations || {});
   const matchedCategory = categories.find((cat) =>
     (trip.recommendations[cat] || []).some((id) => id.toString() === recommendationId)
   );
 
   if (!matchedCategory) {
+    log.error(`❌ Recommendation not found in trip`, {
+      tripId,
+      recommendationId,
+      availableCategories: categories,
+      availableRecommendations: Object.fromEntries(
+        Object.entries(trip.recommendations || {}).map(([cat, ids]) => [
+          cat,
+          ids.map(id => id.toString())
+        ])
+      )
+    });
     return res.status(404).json({
       success: false,
       error: 'Recommendation not found',
-      message: 'Recommendation does not belong to this trip'
+      message: 'Recommendation does not belong to this trip',
+      debug: {
+        searchedId: recommendationId,
+        availableCategories: categories,
+        recommendationCount: categories.reduce((sum, cat) =>
+          sum + (trip.recommendations[cat] || []).length, 0
+        )
+      }
     });
   }
+
+  log.info(`✅ Found recommendation in category: ${matchedCategory}`, {
+    tripId,
+    recommendationId,
+    category: matchedCategory
+  });
 
   req.body.selections = { [matchedCategory]: [recommendationId] };
   return selectRecommendations(req, res);
@@ -446,8 +487,16 @@ export const selectRecommendations = async (req, res) => {
     const { tripId } = req.params;
     const { selections, selectedBy = 'user' } = req.body;
 
+    log.info(`📝 Processing recommendation selections`, {
+      tripId,
+      selections,
+      selectedBy,
+      categoriesCount: Object.keys(selections).length
+    });
+
     const trip = await Trip.findOne({ tripId });
     if (!trip) {
+      log.warn(`❌ Trip not found for selections`, { tripId });
       return res.status(404).json({
         success: false,
         error: 'Trip not found',
@@ -455,9 +504,20 @@ export const selectRecommendations = async (req, res) => {
       });
     }
 
+    log.info(`✅ Trip found, validating selections`, {
+      tripId: trip.tripId,
+      tripStatus: trip.status,
+      availableCategories: Object.keys(trip.recommendations || {})
+    });
+
     // Check if trip has recommendations to select from
-    const allowedStatuses = ['recommendations_ready', 'user_selecting', 'finalized'];
+    const allowedStatuses = ['recommendations_ready', 'user_selecting', 'finalized', 'draft', 'planning'];
     if (!allowedStatuses.includes(trip.status)) {
+      log.warn(`⚠️ Trip status not ready for selections`, {
+        tripId,
+        currentStatus: trip.status,
+        allowedStatuses
+      });
       return res.status(400).json({
         success: false,
         error: 'Trip not ready for selections',
@@ -467,15 +527,27 @@ export const selectRecommendations = async (req, res) => {
 
     const updateData = {};
     const selectionSummary = {};
-    
+
     for (const [category, recommendationIds] of Object.entries(selections)) {
+      log.info(`🔍 Validating selections for category: ${category}`, {
+        tripId,
+        category,
+        requestedIds: recommendationIds
+      });
+
       // Verify recommendations exist and belong to this trip
       const validRecommendations = trip.recommendations[category] || [];
-      const invalidIds = recommendationIds.filter(id => 
+      const invalidIds = recommendationIds.filter(id =>
         !validRecommendations.some(recId => recId.toString() === id)
       );
-      
+
       if (invalidIds.length > 0) {
+        log.error(`❌ Invalid recommendation IDs detected`, {
+          tripId,
+          category,
+          invalidIds,
+          validIds: validRecommendations.map(id => id.toString())
+        });
         return res.status(400).json({
           success: false,
           error: `Invalid recommendation IDs for ${category}`,
@@ -484,35 +556,54 @@ export const selectRecommendations = async (req, res) => {
         });
       }
 
+      log.info(`✅ All IDs validated for ${category}, updating DB`, {
+        tripId,
+        category,
+        count: recommendationIds.length
+      });
+
       const selectedRecs = recommendationIds.map((recId, index) => ({
         recommendation: recId,
         selectedAt: new Date(),
         selectedBy,
         selectionRank: index + 1
       }));
-      
+
       updateData[`selectedRecommendations.${category}`] = selectedRecs;
       selectionSummary[category] = recommendationIds.length;
-      
+
       // Update recommendation selection status
-      await Recommendation.updateMany(
+      const clearResult = await Recommendation.updateMany(
         { _id: { $in: validRecommendations } },
         { 'selection.isSelected': false, 'selection.selectedAt': null }
       );
-      
-      await Recommendation.updateMany(
+
+      const selectResult = await Recommendation.updateMany(
         { _id: { $in: recommendationIds } },
-        { 
+        {
           'selection.isSelected': true,
           'selection.selectedAt': new Date(),
           'selection.selectedBy': selectedBy
         }
       );
+
+      log.info(`✅ Updated recommendation selection flags`, {
+        tripId,
+        category,
+        cleared: clearResult.modifiedCount,
+        selected: selectResult.modifiedCount
+      });
     }
 
     // Update trip status
     updateData.status = 'user_selecting';
     updateData.updatedAt = new Date();
+
+    log.info(`💾 Updating trip document`, {
+      tripId,
+      updateKeys: Object.keys(updateData),
+      selectionSummary
+    });
 
     const updatedTrip = await Trip.findOneAndUpdate(
       { tripId },
@@ -523,6 +614,13 @@ export const selectRecommendations = async (req, res) => {
      .populate('selectedRecommendations.activity.recommendation')
      .populate('selectedRecommendations.restaurant.recommendation')
      .populate('selectedRecommendations.transportation.recommendation');
+
+    log.info(`✅ Successfully saved selections`, {
+      tripId: updatedTrip.tripId,
+      status: updatedTrip.status,
+      totalSelected: Object.values(selectionSummary).reduce((sum, count) => sum + count, 0),
+      selectionSummary
+    });
 
     res.json(formatSuccess(
       {
@@ -536,7 +634,12 @@ export const selectRecommendations = async (req, res) => {
     ));
 
   } catch (error) {
-    log.error('Selection update error', { error: error.message, stack: error.stack });
+    log.error('❌ Selection update error', {
+      tripId: req.params.tripId,
+      error: error.message,
+      stack: error.stack,
+      selections: req.body.selections
+    });
     res.status(500).json({
       success: false,
       error: error.message,
